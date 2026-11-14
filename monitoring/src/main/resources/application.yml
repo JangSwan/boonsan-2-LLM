@@ -1,0 +1,36 @@
+server:
+  port: ${SERVER_PORT:8120}
+
+spring:
+  application:
+    name: monitoring
+  profiles:
+    default: mock
+  task:
+    scheduling:
+      pool:
+        size: 2
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [${llm.monitoring.instance-id}] [%X{requestId:-}] %logger{0} - %msg%n"
+
+llm:
+  http:
+    connect-timeout-ms: 300
+    read-timeout-ms: 1000
+  monitoring:
+    instance-id: ${INSTANCE_ID:monitoring}
+    collect-interval-ms: 2000
+    history-size: 300
+    max-alerts: 200
+    broker-urls: ${BROKER_URLS:http://localhost:8081,http://localhost:8082}
+    worker-urls: ${WORKER_URLS:http://localhost:8091}
+    model-manager-url: ${MODEL_MANAGER_URL:http://localhost:8110}
+    cors-origins: ${CORS_ORIGINS:http://localhost:8140}

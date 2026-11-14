@@ -1,0 +1,29 @@
+server:
+  port: ${SERVER_PORT:8130}
+
+spring:
+  application:
+    name: fake-aws
+  profiles:
+    default: mock
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [${llm.fake-aws.instance-id}] [%X{requestId:-}] %logger{0} - %msg%n"
+
+llm:
+  http:
+    connect-timeout-ms: 500
+    read-timeout-ms: 2000
+  fake-aws:
+    instance-id: ${INSTANCE_ID:fake-aws}
+    membership-urls: ${MEMBERSHIP_URLS:http://localhost:8101,http://localhost:8102}
+    spare-instance-urls: ${SPARE_INSTANCE_URLS:http://localhost:8096}
+    boot-delay-ms: 2000
+    idempotency-window-sec: 300

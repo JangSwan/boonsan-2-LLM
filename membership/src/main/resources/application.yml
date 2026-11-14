@@ -1,0 +1,52 @@
+server:
+  port: ${SERVER_PORT:8101}
+
+spring:
+  application:
+    name: membership
+  profiles:
+    default: mock
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 500ms
+      connect-timeout: 500ms
+  task:
+    scheduling:
+      pool:
+        size: 4
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  health:
+    redis:
+      enabled: false
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [${llm.membership.instance-id}] [%X{requestId:-}] %logger{0} - %msg%n"
+
+llm:
+  http:
+    connect-timeout-ms: 500
+    read-timeout-ms: 2000
+  membership:
+    instance-id: ${INSTANCE_ID:membership-1}
+    # 하트비트 제한 시간 < broker lease TTL(10초): 서버가 사라지면 lease 만료보다 회수가 먼저 일어난다
+    heartbeat-timeout-sec: 3
+    detect-interval-ms: 1000
+    lock-key: membership-leader
+    lock-ttl-sec: 5
+    lock-renew-interval-ms: 1500
+    reclaim-attempts: 3
+    broker-urls: ${BROKER_URLS:http://localhost:8081,http://localhost:8082}
+    worker-urls: ${WORKER_URLS:http://localhost:8091}
+    monitoring-url: ${MONITORING_URL:http://localhost:8120}
+    fake-aws-url: ${FAKE_AWS_URL:http://localhost:8130}
+    aws:
+      region: ${AWS_REGION:ap-northeast-2}
+      launch-template-id: ${AWS_LAUNCH_TEMPLATE_ID:}
