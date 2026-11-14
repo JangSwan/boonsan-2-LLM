@@ -1,0 +1,7 @@
+// membership 앱. 공통 의존성은 루트 build.gradle에서 설정한다.
+dependencies {
+    // Redis는 리더 락에만 쓴다.
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    // real 프로필의 SpotInstanceClient (AWS 스팟 인스턴스 재생성)
+    implementation 'software.amazon.awssdk:ec2'
+}

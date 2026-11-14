@@ -1,0 +1,53 @@
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    name: broker
+  profiles:
+    default: mock
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 500ms
+      connect-timeout: 500ms
+  task:
+    scheduling:
+      pool:
+        size: 4
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  health:
+    # Redis는 broker-primary 락에만 쓰고, 평소 복제 경로는 Redis 없이 동작해야 한다 (sd5 규칙 1).
+    redis:
+      enabled: false
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [${llm.broker.instance-id}] [%X{requestId:-}] %logger{0} - %msg%n"
+
+llm:
+  http:
+    connect-timeout-ms: 500
+    read-timeout-ms: 2000
+  broker:
+    instance-id: ${INSTANCE_ID:broker-primary}
+    role: ${BROKER_ROLE:primary}
+    lease-ttl-sec: 10
+    # 4대분 = 워커 4대 × 워커당 슬롯 8 (worker llm.worker.max-slots)
+    concurrency-cap: 32
+    retry-limit: 2
+    expire-check-interval-ms: 1000
+    primary-lock-key: broker-primary
+    # 시간 조건: 락 갱신 주기 < 락 TTL ≤ promote-after-sec (X)
+    primary-lock-renew-interval-ms: 1000
+    primary-lock-ttl-sec: 3
+    promote-after-sec: 5
+    replica-url: ${REPLICA_URL:}
+    front-gateway-url: ${FRONT_GATEWAY_URL:http://localhost:8080}
+    failure-notify-attempts: 3

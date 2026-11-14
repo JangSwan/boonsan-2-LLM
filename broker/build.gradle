@@ -1,0 +1,5 @@
+// broker 앱. 공통 의존성은 루트 build.gradle에서 설정한다.
+dependencies {
+    // Redis는 broker-primary 락(쿼럼의 세 번째 표)에만 쓴다. 큐·lease는 메모리에 둔다.
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+}

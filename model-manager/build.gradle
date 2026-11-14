@@ -1,0 +1,5 @@
+// model-manager 앱. 공통 의존성은 루트 build.gradle에서 설정한다.
+dependencies {
+    // real 프로필의 ModelStoreDAO (단계별 가중치 원본 S3)
+    implementation 'software.amazon.awssdk:s3'
+}
