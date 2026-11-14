@@ -23,7 +23,7 @@ public class ModelSwapController {
     public void requestSwap(String model, String stage) {
         LadderStage ladderStage = modelConfig.stageOf(stage);
         String modelName = model == null || model.isBlank() ? modelConfig.activeModel() : model;
-        modelConfig.setTarget(new ModelVersion(modelName, modelConfig.nextVersionTag(), ladderStage));
+        modelConfig.setTarget(new ModelVersion(modelName, null, ladderStage));
     }
 
     public String getSwapStatus() {

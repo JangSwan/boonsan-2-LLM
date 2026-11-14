@@ -73,6 +73,9 @@ class ModelConfigTest {
                 .hasMessageContaining("품질 게이트");
         assertThat(config.getStatus()).isEqualTo(ModelConfig.STATUS_IDLE);
         assertThat(config.ratioResponse().targetVersion()).isNull();
+
+        requestSwap("FP8");
+        assertThat(config.ratioResponse().targetVersion()).isEqualTo("v2");   // 거부된 요청은 번호를 쓰지 않는다
     }
 
     @Test

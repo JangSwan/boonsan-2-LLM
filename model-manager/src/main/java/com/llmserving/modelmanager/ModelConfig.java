@@ -71,8 +71,7 @@ public class ModelConfig {
         log.info("event=model.config-loaded activeVersion={} activeStage={} targetVersion={} msg=model-config 적재",
                 active.version(), active.stage().getName(), target == null ? null : target.version());
         if (target == null && properties.targetStage() != null && !properties.targetStage().isBlank()) {
-            setTarget(new ModelVersion(active.modelName(), nextVersionTag(),
-                    qualityGate.findStage(properties.targetStage())));
+            setTarget(new ModelVersion(active.modelName(), null, qualityGate.findStage(properties.targetStage())));
         }
     }
 
@@ -81,7 +80,10 @@ public class ModelConfig {
         return versionRatio().ratio();
     }
 
-    /** 목표 단계 기록 (sd6 4번). QualityGate를 통과한 단계만 허용한다. 교체 중이면 거부한다. */
+    /**
+     * 목표 단계 기록 (sd6 4번). QualityGate를 통과한 단계만 허용한다. 교체 중이면 거부한다.
+     * version.version()이 비어 있으면 게이트를 통과한 뒤에 새 버전 태그를 붙인다 (거부된 요청이 번호를 쓰지 않게).
+     */
     public synchronized void setTarget(ModelVersion version) {
         if (target != null) {
             throw new ApiException(ErrorCode.ALREADY_PROCESSED, "이미 교체가 진행 중입니다 (목표 " + target.version() + ")");
@@ -90,6 +92,9 @@ public class ModelConfig {
         if (!gate.passed()) {
             throw new ApiException(ErrorCode.QUALITY_GATE_FAILED, version.stage().getName()
                     + " 단계는 품질 게이트를 통과하지 못했습니다 (점수 " + gate.qualityScore() + ")");
+        }
+        if (version.version() == null) {
+            version = new ModelVersion(version.modelName(), nextVersionTag(), version.stage());
         }
         target = version;
         changeStatus(STATUS_SWAPPING);
