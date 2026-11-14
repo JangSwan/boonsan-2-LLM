@@ -1,11 +1,7 @@
 rootProject.name = 'llm-serving-platform'
 
+// 구현 순서(CLAUDE.md 7절)에 따라 모듈을 추가한다.
 include 'common'
 include 'broker'
 include 'worker'
-include 'membership'
 include 'front-gateway'
-include 'model-manager'
-include 'monitoring'
-include 'fake-aws'
-include 'client'
