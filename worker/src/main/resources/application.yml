@@ -1,0 +1,65 @@
+server:
+  port: ${SERVER_PORT:8091}
+
+spring:
+  application:
+    name: worker
+  profiles:
+    default: mock
+  task:
+    scheduling:
+      pool:
+        size: 8
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [${llm.worker.instance-id}] [%X{requestId:-}] %logger{0} - %msg%n"
+
+llm:
+  http:
+    connect-timeout-ms: 500
+    read-timeout-ms: 3000
+  worker:
+    instance-id: ${INSTANCE_ID:worker-1}
+    start-on-boot-signal: ${WORKER_START_ON_BOOT_SIGNAL:false}
+    # 워커당 슬롯. broker concurrency-cap(32) = 4대 × 8
+    max-slots: 8
+    pull-interval-ms: 300
+    renew-interval-ms: 2000
+    heartbeat-interval-ms: 1000
+    config-poll-interval-ms: 1000
+    progress-timeout-ms: 4000
+    last-drain-quiet-ms: 3000
+    broker-urls: ${BROKER_URLS:http://localhost:8081,http://localhost:8082}
+    membership-urls: ${MEMBERSHIP_URLS:http://localhost:8101,http://localhost:8102}
+    model-manager-url: ${MODEL_MANAGER_URL:http://localhost:8110}
+    front-gateway-url: ${FRONT_GATEWAY_URL:http://localhost:8080}
+    stream-lanes: 4
+    budget:
+      b-min: 256
+      b-max: 2048
+      target-ttft-ms: 3000
+      step-target-ms: 100
+    credit:
+      kv-gb-per-request: 0.5
+      max-unstarted-tokens: 16000
+    engine:
+      step-base-ms: 20
+      prefill-ms-per-token: 0.02
+      decode-ms-per-request: 1.0
+      idle-wait-ms: 5
+      output-tokens-min: 20
+      output-tokens-max: 60
+      chars-per-token: 4
+      crash-marker: "[[crash]]"
+      crash-restart-ms: 2000
+      load-delay-ms: 1000
+      vllm-url: ${VLLM_URL:http://localhost:8000}
+      vllm-model: ${VLLM_MODEL:meta-llama/Llama-3.1-8B-Instruct}
+      vllm-max-tokens: 256
