@@ -1,5 +1,6 @@
 package com.llmserving.frontgateway.config;
 
+import java.util.Random;
 import java.util.random.RandomGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -24,8 +25,9 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedHeaders("*");
     }
 
+    /** java.util.Random은 스레드 안전하고 모든 JRE에 있다 (jre 이미지에는 RandomGenerator.getDefault()의 구현이 없을 수 있다). */
     @Bean
     public RandomGenerator versionRandom() {
-        return RandomGenerator.getDefault();
+        return new Random();
     }
 }
