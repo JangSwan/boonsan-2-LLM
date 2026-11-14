@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM 질문</title>
+  <link rel="stylesheet" href="css/app.css">
+  <script src="js/config.js"></script>
+  <script src="js/SseClient.js"></script>
+  <script src="js/WebUI.js"></script>
+</head>
+<body>
+<header>
+  <h1>LLM Serving Platform</h1>
+  <nav>
+    <a href="index.html" aria-current="page">질문</a>
+    <a href="admin.html">운영자</a>
+  </nav>
+</header>
+<main>
+  <section>
+    <h2>질문</h2>
+    <form id="question-form">
+      <textarea id="question" placeholder="질문을 입력하세요. 긴 문서도 붙여 넣을 수 있습니다."></textarea>
+      <div class="row">
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button type="button" id="sample-long" class="ghost">긴 입력 예시</button>
+        <button type="button" id="sample-crash" class="ghost">장애 주입 예시</button>
+        <button type="button" id="stop" hidden>중단</button>
+        <button type="submit" id="send" class="primary">보내기</button>
+      </div>
+    </form>
+  </section>
+  <section>
+    <h2>답변 · <span id="status" data-kind="done">대기</span></h2>
+    <div id="answer"></div>
+    <div id="meta"></div>
+  </section>
+</main>
+</body>
+</html>

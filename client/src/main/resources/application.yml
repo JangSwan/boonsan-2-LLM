@@ -1,0 +1,12 @@
+server:
+  port: ${SERVER_PORT:8140}
+
+spring:
+  application:
+    name: client
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

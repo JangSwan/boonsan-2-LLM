@@ -67,8 +67,10 @@ public class SpotSimulator {
         if (spares.isEmpty()) {
             throw new ApiException(ErrorCode.UPSTREAM_UNAVAILABLE, "여유 예비 인스턴스가 없습니다");
         }
-        String url = spares.remove(0);
-        String instanceId = URI.create(url).getHost();
+        String entry = spares.remove(0);
+        int eq = entry.indexOf('=');
+        String url = (eq > 0 ? entry.substring(eq + 1) : entry).trim();
+        String instanceId = eq > 0 ? entry.substring(0, eq).trim() : URI.create(url).getHost();
         byKey.put(idempotencyKey, new Assignment(instanceId, now));
         log.info("event=aws.instance-requested idempotencyKey={} instanceId={} msg=대체 인스턴스 확보 시작",
                 idempotencyKey, instanceId);

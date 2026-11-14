@@ -53,6 +53,31 @@ class ReplicationTest {
     }
 
     @Test
+    void 인출은_큐_제거와_lease_발급을_복제_메시지_하나로_보낸다() {
+        primary.sharedQueue.push(BrokerFixture.item("a", "v1"));
+        primary.replicaPort.kinds.clear();
+
+        primary.leaseManager.pull("worker-1", "v1", 1);
+
+        assertThat(primary.replicaPort.kinds).containsExactly(ChangeRecord.BATCH);
+        assertThat(replica.sharedQueue.items()).isEmpty();
+        assertThat(replica.leaseManager.leases()).hasSize(1);
+    }
+
+    @Test
+    void 복제를_못_하면_인출한_작업을_큐에서_빼지_않는다() {
+        primary.sharedQueue.push(BrokerFixture.item("a", "v1"));
+        primary.replicaPort.down = true;
+        lock.reachable = false;
+        primary.replicator.maintain();
+
+        assertThatThrownBy(() -> primary.leaseManager.pull("worker-1", "v1", 1))
+                .isInstanceOf(BrokerIsolatedException.class);
+        assertThat(primary.sharedQueue.items()).extracting(i -> i.requestId()).containsExactly("a");
+        assertThat(primary.leaseLimiter.getActiveLeases()).isZero();
+    }
+
+    @Test
     void 규칙2_복제본이_끊기면_락을_갱신하는_동안만_혼자_커밋한다() {
         primary.replicator.maintain();          // 락 획득
         primary.replicaPort.down = true;
@@ -72,6 +97,15 @@ class ReplicationTest {
     }
 
     @Test
+    void 주_브로커에게서_연락을_받은_적이_없으면_승격하지_않는다() {
+        primary.replicaPort.target = null;      // 동시 기동: 주 브로커가 아직 복제를 시작하지 않음
+        clock.advanceMs(10_000);
+        replica.brokerReplica.watchPrimary();
+
+        assertThat(replica.brokerReplica.role()).isEqualTo(BrokerRole.REPLICA);
+    }
+
+    @Test
     void 승격_전_복제본은_접수와_인출에_503으로_응답한다() {
         assertThatThrownBy(() -> replica.sharedQueue.push(BrokerFixture.item("a", "v1")))
                 .isInstanceOf(NotPrimaryException.class);
@@ -81,7 +115,7 @@ class ReplicationTest {
 
     @Test
     void 규칙4_주_브로커의_락이_유효하면_X초가_지나도_승격하지_않는다() {
-        primary.replicator.maintain();
+        primary.replicator.maintain();          // 락 획득, 복제본에 생존 알림
         primary.replicaPort.down = true;   // 네트워크 분리: 복제본에 연락이 가지 않음
 
         for (int i = 0; i < 10; i++) {

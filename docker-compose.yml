@@ -1,0 +1,217 @@
+# LLM Serving Platform 전체 실행 (mock 프로필).
+#   ./gradlew build
+#   docker compose up --build
+# 갑작스러운 장애 시연: docker compose stop <서비스명>   (예: worker-5, broker-primary)
+# 컨테이너끼리는 서비스 이름으로 호출하고, 포트는 CLAUDE.md 2절 표와 같다.
+
+x-app: &app
+  restart: "no"
+  mem_limit: 512m
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fs http://localhost:$${SERVER_PORT}/actuator/health || exit 1"]
+    interval: 5s
+    timeout: 3s
+    retries: 40
+    start_period: 20s
+
+x-env: &env
+  SPRING_PROFILES_ACTIVE: mock
+  REDIS_HOST: redis
+  BROKER_URLS: http://broker-primary:8081,http://broker-replica:8082
+  MEMBERSHIP_URLS: http://membership-1:8101,http://membership-2:8102
+  MODEL_MANAGER_URL: http://model-manager:8110
+  FRONT_GATEWAY_URL: http://front-gateway:8080
+  MONITORING_URL: http://monitoring:8120
+  FAKE_AWS_URL: http://fake-aws:8130
+  WORKER_URLS: http://worker-1:8091,http://worker-2:8092,http://worker-3:8093,http://worker-4:8094,http://worker-5:8095,http://worker-spare:8096
+  CORS_ORIGINS: http://localhost:8140
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+
+  # ---- Queue Broker: 주 1대 + 복제본 1대 (복제본이 먼저 떠 있어야 동기 복제를 시작할 수 있다) ----
+  broker-replica:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: broker } }
+    image: llm-serving/broker
+    environment:
+      <<: *env
+      INSTANCE_ID: broker-replica
+      SERVER_PORT: 8082
+      BROKER_ROLE: replica
+    ports: ["8082:8082"]
+    depends_on:
+      redis: { condition: service_healthy }
+  broker-primary:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: broker } }
+    image: llm-serving/broker
+    environment:
+      <<: *env
+      INSTANCE_ID: broker-primary
+      SERVER_PORT: 8081
+      BROKER_ROLE: primary
+      REPLICA_URL: http://broker-replica:8082
+    ports: ["8081:8081"]
+    depends_on:
+      broker-replica: { condition: service_healthy }
+
+  # ---- Membership 2대 (리더 락을 가진 1대만 조치) ----
+  membership-1:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: membership } }
+    image: llm-serving/membership
+    environment:
+      <<: *env
+      INSTANCE_ID: membership-1
+      SERVER_PORT: 8101
+    ports: ["8101:8101"]
+    depends_on:
+      redis: { condition: service_healthy }
+  membership-2:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: membership } }
+    image: llm-serving/membership
+    environment:
+      <<: *env
+      INSTANCE_ID: membership-2
+      SERVER_PORT: 8102
+    ports: ["8102:8102"]
+    depends_on:
+      redis: { condition: service_healthy }
+
+  # ---- Model Manager, Monitoring, 가짜 AWS, Front Gateway ----
+  model-manager:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: model-manager } }
+    image: llm-serving/model-manager
+    environment:
+      <<: *env
+      INSTANCE_ID: model-manager
+      SERVER_PORT: 8110
+      MODEL_CONFIG_FILE: /tmp/llm/model-config.properties
+    ports: ["8110:8110"]
+  monitoring:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: monitoring } }
+    image: llm-serving/monitoring
+    environment:
+      <<: *env
+      INSTANCE_ID: monitoring
+      SERVER_PORT: 8120
+    ports: ["8120:8120"]
+  fake-aws:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: fake-aws } }
+    image: llm-serving/fake-aws
+    environment:
+      <<: *env
+      INSTANCE_ID: fake-aws
+      SERVER_PORT: 8130
+      SPARE_INSTANCE_URLS: http://worker-spare:8096
+    ports: ["8130:8130"]
+  front-gateway:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: front-gateway } }
+    image: llm-serving/front-gateway
+    environment:
+      <<: *env
+      INSTANCE_ID: front-gateway
+      SERVER_PORT: 8080
+    ports: ["8080:8080"]
+    depends_on:
+      broker-primary: { condition: service_healthy }
+
+  # ---- Worker 5대 (R3: 5대 운영, 4대분 상한) + 재보충용 예비 1대 ----
+  worker-1:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: worker } }
+    image: llm-serving/worker
+    environment:
+      <<: *env
+      INSTANCE_ID: worker-1
+      SERVER_PORT: 8091
+    ports: ["8091:8091"]
+    depends_on:
+      broker-primary: { condition: service_healthy }
+      model-manager: { condition: service_healthy }
+  worker-2:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: worker } }
+    image: llm-serving/worker
+    environment:
+      <<: *env
+      INSTANCE_ID: worker-2
+      SERVER_PORT: 8092
+    ports: ["8092:8092"]
+    depends_on:
+      broker-primary: { condition: service_healthy }
+      model-manager: { condition: service_healthy }
+  worker-3:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: worker } }
+    image: llm-serving/worker
+    environment:
+      <<: *env
+      INSTANCE_ID: worker-3
+      SERVER_PORT: 8093
+    ports: ["8093:8093"]
+    depends_on:
+      broker-primary: { condition: service_healthy }
+      model-manager: { condition: service_healthy }
+  worker-4:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: worker } }
+    image: llm-serving/worker
+    environment:
+      <<: *env
+      INSTANCE_ID: worker-4
+      SERVER_PORT: 8094
+    ports: ["8094:8094"]
+    depends_on:
+      broker-primary: { condition: service_healthy }
+      model-manager: { condition: service_healthy }
+  worker-5:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: worker } }
+    image: llm-serving/worker
+    environment:
+      <<: *env
+      INSTANCE_ID: worker-5
+      SERVER_PORT: 8095
+    ports: ["8095:8095"]
+    depends_on:
+      broker-primary: { condition: service_healthy }
+      model-manager: { condition: service_healthy }
+
+  # AWS가 새로 만들어 주는 대체 인스턴스를 흉내 낸다: 기동 신호 전에는 하트비트도 pull도 하지 않는다.
+  worker-spare:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: worker } }
+    image: llm-serving/worker
+    environment:
+      <<: *env
+      INSTANCE_ID: worker-spare
+      SERVER_PORT: 8096
+      WORKER_START_ON_BOOT_SIGNAL: "true"
+    ports: ["8096:8096"]
+    depends_on:
+      broker-primary: { condition: service_healthy }
+      model-manager: { condition: service_healthy }
+
+  # ---- 화면 (Web UI, AdminConsole) ----
+  client:
+    <<: *app
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: client } }
+    image: llm-serving/client
+    environment:
+      SERVER_PORT: 8140
+    ports: ["8140:8140"]

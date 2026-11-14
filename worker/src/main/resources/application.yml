@@ -24,7 +24,8 @@ logging:
 llm:
   http:
     connect-timeout-ms: 500
-    read-timeout-ms: 3000
+    # pull 응답을 놓치면 발급된 lease가 만료될 때까지 묶이므로 넉넉히 둔다
+    read-timeout-ms: 10000
   worker:
     instance-id: ${INSTANCE_ID:worker-1}
     start-on-boot-signal: ${WORKER_START_ON_BOOT_SIGNAL:false}

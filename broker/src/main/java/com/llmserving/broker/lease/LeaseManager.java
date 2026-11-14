@@ -54,34 +54,30 @@ public class LeaseManager {
         if (k == 0) {
             return List.of();
         }
-        List<QueueItem> items;
+        List<Lease> issued;
         try {
-            items = sharedQueue.pullMatching(versionTag, k);
+            // 큐에서 제거와 lease 발급을 복제 메시지 하나로 커밋한다 (중간에 주 브로커가 죽어도 요청이 사라지지 않게).
+            issued = replicator.transaction(() -> {
+                List<QueueItem> items = sharedQueue.pullMatching(versionTag, k);
+                long expiresAt = clock.millis() + leaseTtlMs;
+                List<Lease> leasesToIssue = items.stream()
+                        .map(item -> new Lease(UUID.randomUUID().toString(), workerId, expiresAt, item))
+                        .toList();
+                if (!leasesToIssue.isEmpty()) {
+                    replicator.commit(ChangeRecord.LEASES_ISSUED, ChangePayloads.Leases.of(leasesToIssue),
+                            () -> leasesToIssue.forEach(lease -> leases.put(lease.getLeaseId(), lease)));
+                }
+                return leasesToIssue;
+            });
         } catch (RuntimeException e) {
             leaseLimiter.release(k);
             throw e;
         }
-        leaseLimiter.release(k - items.size());
-        if (items.isEmpty()) {
-            return List.of();
-        }
-        long expiresAt = clock.millis() + leaseTtlMs;
-        List<Lease> issued = items.stream()
-                .map(item -> new Lease(UUID.randomUUID().toString(), workerId, expiresAt, item))
-                .toList();
-        try {
-            replicator.commit(ChangeRecord.LEASES_ISSUED, ChangePayloads.Leases.of(issued),
-                    () -> issued.forEach(lease -> leases.put(lease.getLeaseId(), lease)));
-        } catch (RuntimeException e) {
-            // lease를 커밋하지 못하면 꺼낸 작업을 큐로 되돌린다 (가능한 경우).
-            leaseLimiter.release(items.size());
-            items.forEach(this::requeueQuietly);
-            throw e;
-        }
+        leaseLimiter.release(k - issued.size());
         for (Lease lease : issued) {
             try (var ignored = MDC.putCloseable("requestId", lease.getRequestId())) {
                 log.info("event=lease.issued requestId={} leaseId={} workerId={} versionTag={} expiresAt={} msg=lease 발급",
-                        lease.getRequestId(), lease.getLeaseId(), workerId, versionTag, expiresAt);
+                        lease.getRequestId(), lease.getLeaseId(), workerId, versionTag, lease.getExpiresAt());
             }
         }
         return issued;
@@ -120,10 +116,14 @@ public class LeaseManager {
         List<Lease> expired = leases.values().stream().filter(l -> l.isExpired(now)).toList();
         for (Lease lease : expired) {
             try (var ignored = MDC.putCloseable("requestId", lease.getRequestId())) {
-                removeCommitted(lease);
                 log.warn("event=lease.expired requestId={} leaseId={} workerId={} retryCount={} msg=갱신이 끊겨 lease 만료",
                         lease.getRequestId(), lease.getLeaseId(), lease.getWorkerId(), lease.getItem().getRetryCount());
-                retryCounter.onExpired(lease.getItem());
+                // lease 제거와 재투입·격리를 함께 커밋한다.
+                replicator.transaction(() -> {
+                    removeCommitted(lease);
+                    retryCounter.onExpired(lease.getItem());
+                    return null;
+                });
             } catch (RuntimeException e) {
                 log.warn("event=lease.expire-failed leaseId={} msg=만료 처리 실패, 다음 주기에 다시 시도: {}",
                         lease.getLeaseId(), e.getMessage());
@@ -140,8 +140,11 @@ public class LeaseManager {
         List<Lease> owned = leases.values().stream().filter(l -> l.getWorkerId().equals(workerId)).toList();
         for (Lease lease : owned) {
             try (var ignored = MDC.putCloseable("requestId", lease.getRequestId())) {
-                removeCommitted(lease);
-                sharedQueue.requeue(lease.getItem());
+                replicator.transaction(() -> {
+                    removeCommitted(lease);
+                    sharedQueue.requeue(lease.getItem());
+                    return null;
+                });
                 log.info("event=lease.reclaimed requestId={} leaseId={} workerId={} msg=회수해 공용 큐로 반환",
                         lease.getRequestId(), lease.getLeaseId(), workerId);
             }
@@ -209,13 +212,5 @@ public class LeaseManager {
                 leaseLimiter.release();
             }
         });
-    }
-
-    private void requeueQuietly(QueueItem item) {
-        try {
-            sharedQueue.requeue(item);
-        } catch (RuntimeException e) {
-            log.error("event=lease.requeue-failed requestId={} msg=작업 반환 실패: {}", item.requestId(), e.getMessage());
-        }
     }
 }

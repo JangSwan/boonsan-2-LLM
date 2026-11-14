@@ -1,0 +1,61 @@
+server:
+  port: ${SERVER_PORT:8110}
+
+spring:
+  application:
+    name: model-manager
+  profiles:
+    default: mock
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [${llm.model-manager.instance-id}] [%X{requestId:-}] %logger{0} - %msg%n"
+
+llm:
+  http:
+    connect-timeout-ms: 500
+    read-timeout-ms: 2000
+  model-manager:
+    instance-id: ${INSTANCE_ID:model-manager}
+    # model-config 처음 값 (교체·롤백 결과는 config-file 한 곳에 기록)
+    active-model: llama-3.1-8b
+    active-stage: U0
+    active-version: v1
+    target-stage: ""
+    config-file: ${MODEL_CONFIG_FILE:/tmp/llm/model-config.properties}
+    worker-seen-timeout-ms: 5000
+    drain-timeout-ms: 60000
+    gate:
+      min-score: 0.7
+      quality-scores:
+        U0: 0.90
+        FP8: 0.86
+        SMALL: 0.62
+      sessions-per-dollar:
+        U0: 1.0
+        FP8: 1.6
+        SMALL: 2.4
+    rollback:
+      threshold: 0.6
+      window: 5
+    store:
+      load-delay-ms: 800
+      s3-bucket: ${WEIGHTS_BUCKET:llm-weights}
+      region: ${AWS_REGION:ap-northeast-2}
+      stages:
+        - name: U0
+          weight-uri: s3://llm-weights/llama-3.1-8b/bf16
+          kv-gb-per-gpu: 6.0
+        - name: FP8
+          weight-uri: s3://llm-weights/llama-3.1-8b/fp8-w8a8
+          kv-gb-per-gpu: 10.0
+        - name: SMALL
+          weight-uri: s3://llm-weights/llama-3.2-3b/bf16
+          kv-gb-per-gpu: 14.0
+    cors-origins: ${CORS_ORIGINS:http://localhost:8140}

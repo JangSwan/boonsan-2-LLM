@@ -36,6 +36,8 @@ public class BrokerReplica {
     private volatile BrokerRole role;
     private volatile long epoch = 1;
     private volatile long lastPrimaryContactAt;
+    /** 주 브로커에게서 한 번이라도 복제 메시지를 받았는가. 받기 전에는 "연락이 끊겼다"고 보지 않는다 (동시 기동 시 오승격 방지). */
+    private volatile boolean primarySeen;
     private volatile boolean promoted;
     private volatile long fencedUpToEpoch;
 
@@ -63,27 +65,37 @@ public class BrokerReplica {
         }
         epoch = change.epoch();
         lastPrimaryContactAt = clock.millis();
-        switch (change.kind()) {
-            case ChangeRecord.PING -> { }
-            case ChangeRecord.QUEUE_PUSHED -> sharedQueue.getObject().applyPushed(read(change, ChangePayloads.ItemData.class).toItem());
-            case ChangeRecord.QUEUE_REQUEUED -> sharedQueue.getObject().applyRequeued(read(change, ChangePayloads.ItemData.class).toItem());
-            case ChangeRecord.QUEUE_REMOVED -> sharedQueue.getObject().applyRemoved(read(change, ChangePayloads.RequestIds.class).requestIds());
-            case ChangeRecord.LEASES_ISSUED -> leaseManager.getObject().applyIssued(
-                    read(change, ChangePayloads.Leases.class).leases().stream().map(ChangePayloads.LeaseData::toLease).toList());
-            case ChangeRecord.LEASE_RENEWED -> {
-                ChangePayloads.LeaseRenewal renewal = read(change, ChangePayloads.LeaseRenewal.class);
-                leaseManager.getObject().applyRenewed(renewal.leaseId(), renewal.expiresAt());
-            }
-            case ChangeRecord.LEASE_REMOVED -> leaseManager.getObject().applyRemoved(read(change, ChangePayloads.LeaseIdData.class).leaseId());
-            case ChangeRecord.QUARANTINED -> quarantineQueue.getObject().applyIsolated(read(change, ChangePayloads.ItemData.class).toItem());
-            case ChangeRecord.SNAPSHOT -> restore(read(change, ChangePayloads.Snapshot.class));
-            default -> throw new IllegalArgumentException("알 수 없는 변경 종류: " + change.kind());
+        primarySeen = true;
+        if (ChangeRecord.BATCH.equals(change.kind())) {
+            read(change.payload(), ChangePayloads.Batch.class).entries()
+                    .forEach(entry -> applyOne(entry.kind(), entry.payload()));
+        } else {
+            applyOne(change.kind(), change.payload());
         }
     }
 
-    /** 주 브로커 응답 끊김 감지 (sd5 8번): 복제본이고, 마지막 연락 후 X초가 지났는가. */
+    private void applyOne(String kind, String payload) {
+        switch (kind) {
+            case ChangeRecord.PING -> { }
+            case ChangeRecord.QUEUE_PUSHED -> sharedQueue.getObject().applyPushed(read(payload, ChangePayloads.ItemData.class).toItem());
+            case ChangeRecord.QUEUE_REQUEUED -> sharedQueue.getObject().applyRequeued(read(payload, ChangePayloads.ItemData.class).toItem());
+            case ChangeRecord.QUEUE_REMOVED -> sharedQueue.getObject().applyRemoved(read(payload, ChangePayloads.RequestIds.class).requestIds());
+            case ChangeRecord.LEASES_ISSUED -> leaseManager.getObject().applyIssued(
+                    read(payload, ChangePayloads.Leases.class).leases().stream().map(ChangePayloads.LeaseData::toLease).toList());
+            case ChangeRecord.LEASE_RENEWED -> {
+                ChangePayloads.LeaseRenewal renewal = read(payload, ChangePayloads.LeaseRenewal.class);
+                leaseManager.getObject().applyRenewed(renewal.leaseId(), renewal.expiresAt());
+            }
+            case ChangeRecord.LEASE_REMOVED -> leaseManager.getObject().applyRemoved(read(payload, ChangePayloads.LeaseIdData.class).leaseId());
+            case ChangeRecord.QUARANTINED -> quarantineQueue.getObject().applyIsolated(read(payload, ChangePayloads.ItemData.class).toItem());
+            case ChangeRecord.SNAPSHOT -> restore(read(payload, ChangePayloads.Snapshot.class));
+            default -> throw new IllegalArgumentException("알 수 없는 변경 종류: " + kind);
+        }
+    }
+
+    /** 주 브로커 응답 끊김 감지 (sd5 8번): 복제본이고, 주 브로커와 연락하던 중 마지막 연락 후 X초가 지났는가. */
     public boolean detectPrimaryLoss() {
-        return role == BrokerRole.REPLICA && clock.millis() - lastPrimaryContactAt >= promoteAfterMs;
+        return role == BrokerRole.REPLICA && primarySeen && clock.millis() - lastPrimaryContactAt >= promoteAfterMs;
     }
 
     /** 주기 작업: 주 브로커 응답 감시. 끊겼고 broker-primary 락을 얻으면 승격한다. */
@@ -153,11 +165,11 @@ public class BrokerReplica {
                 snapshot.queue().size(), snapshot.leases().size());
     }
 
-    private <T> T read(ChangeRecord change, Class<T> type) {
+    private <T> T read(String payload, Class<T> type) {
         try {
-            return objectMapper.readValue(change.payload(), type);
+            return objectMapper.readValue(payload, type);
         } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("변경 내용 해석 실패: " + change.kind(), e);
+            throw new IllegalArgumentException("변경 내용 해석 실패: " + type.getSimpleName(), e);
         }
     }
 }
