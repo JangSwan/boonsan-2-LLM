@@ -14,7 +14,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param lockRenewIntervalMs   리더 락 갱신 주기 (< 락 TTL)
  * @param reclaimAttempts       lease 회수 시도 횟수
  * @param brokerUrls            broker 주소 (주 브로커, 복제본 순)
- * @param workerUrls            워커 주소. 호스트 이름이 워커 ID다 (예: http://worker-1:8091)
+ * @param workerUrls            워커 주소. 호스트 이름이 워커 ID다 (예: http://worker-1:8091, 또는 worker-1=http://localhost:8091)
  * @param monitoringUrl         monitoring 주소
  * @param fakeAwsUrl            mock: fake-aws 주소
  * @param aws                   real: AWS 스팟 설정
