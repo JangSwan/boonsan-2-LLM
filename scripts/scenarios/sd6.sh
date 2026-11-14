@@ -31,7 +31,7 @@ elapsed=$(( $(date +%s) - start ))
 wait
 for n in $(seq 1 "$i"); do assert_completed "sd6-swap-$n"; done
 [ "$(status | jq -r .activeStage)" = FP8 ] || fail "활성 단계가 FP8이 아님"
-svc_logs model-manager | grep -q 'event=model.switched' || fail "model.switched 로그 없음"
+has_log model-manager 'event=model.switched' || fail "model.switched 로그 없음"
 pass "sd6 교체: ${elapsed}초 만에 FP8 확정 (10분 이내), 교체 중 질문 ${i}건 끊김 없이 완료"
 
 log "sd6: 운영 중 품질 이상 주입 → U0 롤백"
@@ -51,5 +51,5 @@ wait_status ROLLED_BACK 5
 wait
 for n in $(seq 1 "$j"); do assert_completed "sd6-rb-$n"; done
 [ "$(status | jq -r .activeStage)" = U0 ] || fail "롤백 후 활성 단계가 U0가 아님"
-svc_logs model-manager | grep -q 'event=model.rolled-back\|event=model.rollback-started' || fail "롤백 로그 없음"
+has_log model-manager 'event=model.rolled-back|event=model.rollback-started' || fail "롤백 로그 없음"
 pass "sd6 롤백: 품질 이상 감지 후 같은 롤링 절차로 U0 복귀, 롤백 중 질문 ${j}건 완료"

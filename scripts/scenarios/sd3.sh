@@ -20,14 +20,14 @@ for i in $(seq 1 20); do ask "sd3-after-$i" "회수 후 질문 $i" 120 & done
 leader=""
 for _ in $(seq 1 30); do
   for m in membership-1 membership-2; do
-    svc_logs $m 2>/dev/null | grep -q 'event=worker.excluded workerId=worker-5' && leader=$m
+    has_log $m 'event=worker.excluded workerId=worker-5' && leader=$m
   done
   [ -n "$leader" ] && break
   sleep 1
 done
 [ -n "$leader" ] || fail "worker-5가 제외되지 않음"
 other=$([ "$leader" = membership-1 ] && echo membership-2 || echo membership-1)
-svc_logs "$other" | grep -q 'event=worker.excluded workerId=worker-5' && fail "리더가 아닌 $other도 제외를 실행함"
+has_log "$other" 'event=worker.excluded workerId=worker-5' && fail "리더가 아닌 $other도 제외를 실행함"
 wait_log "$leader" 'event=recovery.service workerId=worker-5' 20
 t_service=$(( $(date +%s) - gone_at ))
 alerts | jq -e 'any(.[]; .kind == "recovery.service")' >/dev/null || fail "복구 알림(T서비스)이 Monitoring에 없음"

@@ -26,11 +26,18 @@ svc_logs() {
   if [ "$MODE" = local ]; then cat "$ROOT/.run/logs/$1.log"; else docker compose logs --no-color "$1"; fi
 }
 
+# 서비스 로그에 패턴이 있는가. grep -q는 pipefail에서 앞 명령을 SIGPIPE로 실패시키므로 끝까지 읽는다.
+has_log() {
+  local count
+  count=$(svc_logs "$1" 2>/dev/null | grep -cE "$2" || true)
+  [ "${count:-0}" -gt 0 ]
+}
+
 # 로그에 이벤트가 나타날 때까지 기다린다: wait_log <서비스> <패턴> <초>
 wait_log() {
   local svc=$1 pattern=$2 timeout=$3
   for _ in $(seq 1 "$timeout"); do
-    svc_logs "$svc" 2>/dev/null | grep -qE "$pattern" && return 0
+    has_log "$svc" "$pattern" && return 0
     sleep 1
   done
   fail "$svc 로그에 '$pattern'이(가) ${timeout}초 안에 나타나지 않음"

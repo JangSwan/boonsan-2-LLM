@@ -14,9 +14,10 @@ failed_event "sd4-X" || fail "격리된 요청이 실패 응답을 받지 못함
 grep -q 'REQUEST_QUARANTINED' "$OUT/sd4-X.sse" || fail "실패 코드가 REQUEST_QUARANTINED가 아님"
 for i in 1 2 3 4 5 6; do assert_completed "sd4-ok-$i"; done
 
-logs=$(svc_logs broker-primary)
-echo "$logs" | grep -q 'event=retry.requeued.*retryCount=1' || fail "1회차 만료 후 재투입 로그 없음"
-echo "$logs" | grep -q 'event=retry.quarantined.*retryCount=2' || fail "2회차 만료 후 격리 로그 없음"
+has_log broker-primary 'event=retry.requeued.*retryCount=1' || fail "1회차 만료 후 재투입 로그 없음"
+has_log broker-primary 'event=retry.quarantined.*retryCount=2' || fail "2회차 만료 후 격리 로그 없음"
+
+
 quarantined=$(curl -s "$BROKER_PRIMARY/api/broker/queue/metrics" | jq -r '.quarantinedCount')
 [ "$quarantined" -ge 1 ] || fail "격리 큐가 비어 있음"
 pass "sd4: 만료 1회차 재투입 → 2회차 격리 → 실패 통지, 정상 질문 6건 완료"
