@@ -1,0 +1,40 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: front-gateway
+  profiles:
+    default: mock
+  mvc:
+    async:
+      request-timeout: 600000
+  task:
+    scheduling:
+      pool:
+        size: 4
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [${llm.front-gateway.instance-id}] [%X{requestId:-}] %logger{0} - %msg%n"
+
+llm:
+  http:
+    connect-timeout-ms: 500
+    read-timeout-ms: 3000
+  front-gateway:
+    instance-id: ${INSTANCE_ID:front-gateway}
+    broker-urls: ${BROKER_URLS:http://localhost:8081,http://localhost:8082}
+    model-manager-url: ${MODEL_MANAGER_URL:http://localhost:8110}
+    position-poll-interval-ms: 1000
+    ratio-poll-interval-ms: 1000
+    sse-timeout-ms: 600000
+    chars-per-token: 4
+    default-version: v1
+    cors-origins: ${CORS_ORIGINS:http://localhost:8140}
