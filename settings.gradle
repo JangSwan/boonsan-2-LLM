@@ -1,0 +1,4 @@
+rootProject.name = 'boonsan-2-llm'
+
+// 모듈은 구현 순서(CLAUDE.md 7절)에 따라 하나씩 추가한다.
+include 'common'

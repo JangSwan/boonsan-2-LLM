@@ -1,0 +1,1 @@
+// common: 요청/응답 DTO(record)와 API 경로 상수만 둔다. 로직, Lombok, Spring 의존 금지 (CLAUDE.md 2절, 5절).
