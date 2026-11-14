@@ -84,6 +84,10 @@ class EngineSchedulerTest {
 
         assertThat(scheduler.activeSessions()).isZero();
         assertThat(engine.listener.events).isEmpty();
+        assertThat(scheduler.freeCapacity().freeSlots()).isZero();   // 재시작 중에는 새 작업을 받지 않는다
+
+        engine.clock.advanceMs(2_000);                                // 가짜 엔진 재시작 시간
+        scheduler.runStep();
         assertThat(scheduler.freeCapacity().freeSlots()).isEqualTo(8);
     }
 

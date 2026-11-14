@@ -29,6 +29,7 @@ import org.springframework.stereotype.Component;
  *   <li>Prefill 조각은 남은 입력이 적은 요청부터 채운다. 그래서 짧은 요청 S는 다음 스텝에 통째로 끼어들고,
  *       긴 입력 L은 남은 예산만큼 조각으로 읽힌다 (sd2 9~10번).</li>
  *   <li>첫 토큰, 진척, 완료는 EngineEventListener로 알린다 (CreditManager, LeaseRenewer가 구독).</li>
+ *   <li>엔진이 비정상 종료하면 생성 시험이 다시 통과할 때까지 남은 여유를 0으로 알린다 (재시작 중에 새 작업을 받지 않는다).</li>
  * </ul>
  */
 @Slf4j
@@ -47,6 +48,7 @@ public class EngineScheduler {
     private final Deque<Long> ttftSamples = new ArrayDeque<>();
     private StepPlan inFlightPlan;
     private volatile int lastBudget;
+    private volatile boolean engineHealthy = true;
     private volatile long busyMs;
     private final long startedAt;
 
@@ -147,6 +149,9 @@ public class EngineScheduler {
 
     /** 남은 슬롯 · KV · 미시작 토큰 (sd1 10~11번). */
     public synchronized Capacity freeCapacity() {
+        if (!engineHealthy) {
+            return new Capacity(0, 0, unstartedTokens());
+        }
         int freeSlots = Math.max(0, maxSlots - jobs.size());
         double freeKvGb = modelRuntime.kvCapacityGb() - jobs.size() * kvGbPerRequest;
         return new Capacity(freeSlots, freeKvGb, unstartedTokens());
@@ -155,6 +160,13 @@ public class EngineScheduler {
     /** 엔진 루프: 할 일이 있으면 스텝 하나를 실행한다. */
     @Scheduled(fixedDelayString = "${llm.worker.engine.idle-wait-ms}")
     public void runStep() {
+        if (!engineHealthy) {
+            if (!modelRuntime.generationTest()) {
+                return;
+            }
+            engineHealthy = true;
+            log.info("event=engine.recovered msg=엔진 생성 시험 통과, 다시 작업을 받음");
+        }
         StepPlan plan = buildStep();
         if (plan.isEmpty()) {
             return;
@@ -177,6 +189,7 @@ public class EngineScheduler {
         List<String> lost = List.copyOf(jobs.keySet());
         jobs.clear();
         inFlightPlan = null;
+        engineHealthy = false;
         log.error("event=engine.failed lost={} msg=엔진 비정상 종료, 진행 중 요청의 진척 보고 중단: {}", lost, e.getMessage());
     }
 
