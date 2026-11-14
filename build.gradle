@@ -1,0 +1,73 @@
+// 버전은 이 파일에서만 정한다 (CLAUDE.md 5절). 모듈 build.gradle에서는 버전을 지정하지 않는다.
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.7' apply false
+    id 'io.spring.dependency-management' version '1.1.7' apply false
+}
+
+ext {
+    archunitVersion = '1.4.1'
+}
+
+allprojects {
+    group = 'com.llmserving'
+    version = '0.1.0-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'io.spring.dependency-management'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    dependencyManagement {
+        imports {
+            mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        // Spring이 @PathVariable 등 파라미터 이름을 읽을 수 있게 한다.
+        options.compilerArgs << '-parameters'
+    }
+
+    dependencies {
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testImplementation 'org.assertj:assertj-core'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    tasks.named('test') {
+        useJUnitPlatform()
+    }
+}
+
+// common을 제외한 모듈은 모두 별도 Spring Boot 앱이다 (CLAUDE.md 2절).
+// 각 앱은 common에만 코드 의존한다 (CLAUDE.md 3절).
+configure(subprojects.findAll { it.name != 'common' }) {
+    apply plugin: 'org.springframework.boot'
+
+    dependencies {
+        implementation project(':common')
+        implementation 'org.springframework.boot:spring-boot-starter-web'
+        implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+        // Lombok은 @RequiredArgsConstructor, @Getter, @Slf4j만 쓴다 (lombok.config에서 나머지 금지).
+        compileOnly 'org.projectlombok:lombok'
+        annotationProcessor 'org.projectlombok:lombok'
+        testCompileOnly 'org.projectlombok:lombok'
+        testAnnotationProcessor 'org.projectlombok:lombok'
+
+        testImplementation 'org.springframework.boot:spring-boot-starter-test'
+        testImplementation "com.tngtech.archunit:archunit-junit5:${archunitVersion}"
+    }
+}
