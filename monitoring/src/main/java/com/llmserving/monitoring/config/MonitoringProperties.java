@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param historySize       지표 이름별로 보관하는 개수
  * @param maxAlerts         보관하는 알림 개수
  * @param brokerUrls        broker 주소 (주 브로커, 복제본 순)
- * @param workerUrls        워커 주소. 호스트 이름이 워커 ID다
+ * @param workerUrls        워커 주소 (http://worker-1:8091 또는 worker-1=http://localhost:8091)
  * @param modelManagerUrl   model-manager 주소
  * @param corsOrigins       브라우저 client 출처
  */

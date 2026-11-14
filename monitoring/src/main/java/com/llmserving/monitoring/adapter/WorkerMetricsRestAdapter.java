@@ -16,7 +16,8 @@ public class WorkerMetricsRestAdapter implements WorkerMetricsPort {
     private final List<RestClient> workers;
 
     public WorkerMetricsRestAdapter(RestClient.Builder builder, MonitoringProperties properties) {
-        this.workers = properties.workerUrls().stream().map(url -> builder.clone().baseUrl(url).build()).toList();
+        this.workers = properties.workerUrls().stream()
+                .map(entry -> builder.clone().baseUrl(entry.substring(entry.indexOf('=') + 1).trim()).build()).toList();
     }
 
     @Override
