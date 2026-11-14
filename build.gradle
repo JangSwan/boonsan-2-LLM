@@ -7,6 +7,7 @@ plugins {
 
 ext {
     archunitVersion = '1.4.1'
+    awsSdkVersion = '2.29.0'
 }
 
 allprojects {
@@ -31,6 +32,7 @@ subprojects {
     dependencyManagement {
         imports {
             mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+            mavenBom "software.amazon.awssdk:bom:${awsSdkVersion}"
         }
     }
 
@@ -69,5 +71,14 @@ configure(subprojects.findAll { it.name != 'common' }) {
 
         testImplementation 'org.springframework.boot:spring-boot-starter-test'
         testImplementation "com.tngtech.archunit:archunit-junit5:${archunitVersion}"
+        testImplementation 'org.awaitility:awaitility'
+    }
+
+    // 컨테이너 이미지에서 실행할 jar 이름을 모듈 이름으로 고정한다 (Dockerfile에서 사용).
+    tasks.named('bootJar') {
+        archiveFileName = "${project.name}.jar"
+    }
+    tasks.named('jar') {
+        enabled = false
     }
 }

@@ -94,7 +94,7 @@ public final class ApiPaths {
         public static final String SWAP_STATUS = BASE + "/swaps/status";
         /** v2 비율 조회 (ModelConfig.getRatio). */
         public static final String RATIO = BASE + "/ratio";
-        /** 워커의 설정 변경 감지 (ModelConfig.currentStage 등). */
+        /** 워커의 설정 변경 감지 (ModelConfig.currentStage 등). 쿼리 파라미터 workerId, versionTag. */
         public static final String CONFIG = BASE + "/config";
         /** 드레인 시작 보고 (ModelConfig.onDrainStart). */
         public static final String WORKER_DRAIN_START = BASE + "/workers/{workerId}/drain-start";
@@ -116,6 +116,8 @@ public final class ApiPaths {
         public static final String ALERTS = BASE + "/alerts";
         /** 지표 조회 (MetricsCollector.query). 쿼리 파라미터 name. */
         public static final String METRICS = BASE + "/metrics";
+        /** 응답 품질 샘플 입력 (SampleForwarder.forward). 시연에서 품질 이상을 주입한다. */
+        public static final String QUALITY_SAMPLES = BASE + "/quality-samples";
     }
 
     /** fake-aws: 인스턴스 재생성, 시연용 스팟 회수 명령. */
