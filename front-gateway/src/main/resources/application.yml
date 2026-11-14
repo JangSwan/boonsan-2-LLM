@@ -27,7 +27,7 @@ logging:
 llm:
   http:
     connect-timeout-ms: 500
-    read-timeout-ms: 3000
+    read-timeout-ms: 5000
   front-gateway:
     instance-id: ${INSTANCE_ID:front-gateway}
     broker-urls: ${BROKER_URLS:http://localhost:8081,http://localhost:8082}
@@ -38,3 +38,5 @@ llm:
     chars-per-token: 4
     default-version: v1
     cors-origins: ${CORS_ORIGINS:http://localhost:8140}
+    broker-retry-budget-ms: 20000
+    broker-retry-backoff-ms: 300
