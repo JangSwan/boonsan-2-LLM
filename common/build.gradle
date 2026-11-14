@@ -1,0 +1,10 @@
+// common: 요청/응답 DTO와 API 경로 상수만 둔다. 로직 금지, Lombok 금지 (CLAUDE.md 2·5절).
+// Spring에 의존하지 않는 순수 Java 라이브러리로 둔다.
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    // DTO가 앱 사이 JSON 계약을 지키는지 확인하는 테스트에만 쓴다.
+    testImplementation 'com.fasterxml.jackson.core:jackson-databind'
+}
