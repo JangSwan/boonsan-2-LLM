@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>운영자 콘솔</title>
+  <link rel="stylesheet" href="css/app.css">
+  <script src="js/config.js"></script>
+  <script src="js/AdminConsole.js"></script>
+</head>
+<body>
+<header>
+  <h1>LLM Serving Platform</h1>
+  <nav>
+    <a href="index.html">질문</a>
+    <a href="admin.html" aria-current="page">운영자</a>
+  </nav>
+</header>
+<main class="two">
+  <section>
+    <h2>모델 교체</h2>
+    <form id="swap-form">
+      <div class="row">
+        <input type="text" name="model" value="llama-3.1-8b" aria-label="모델">
+        <select name="stage" aria-label="사다리 단계">
+          <option value="FP8">FP8 (8B W8A8)</option>
+          <option value="SMALL">SMALL (3B)</option>
+          <option value="U0">U0 (8B 원정밀)</option>
+        </select>
+        <button type="submit" class="primary">교체 요청</button>
+      </div>
+      <div class="row">
+        <button type="button" id="degrade" class="ghost">품질 이상 주입 (롤백 시연)</button>
+      </div>
+      <p id="swap-result" class="muted"></p>
+    </form>
+  </section>
+  <section>
+    <h2>교체 · 롤백 상태</h2>
+    <div id="swap-status"></div>
+  </section>
+  <section class="wide">
+    <h2>처리 현황</h2>
+    <div class="stats" id="queue"></div>
+    <table>
+      <thead><tr><th>워커</th><th>세션</th><th>미시작 토큰</th><th>스텝 예산 B</th><th>TTFT p95 (ms)</th><th>GPU</th></tr></thead>
+      <tbody id="metrics"></tbody>
+    </table>
+  </section>
+  <section class="wide">
+    <h2>장애 · 복구 알림</h2>
+    <ul id="alerts"></ul>
+  </section>
+</main>
+</body>
+</html>
