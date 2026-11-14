@@ -17,6 +17,8 @@ public record ChangeRecord(long seq, String kind, String payload, long epoch) {
     public static final String LEASE_RENEWED = "LEASE_RENEWED";
     public static final String LEASE_REMOVED = "LEASE_REMOVED";
     public static final String QUARANTINED = "QUARANTINED";
+    /** 함께 커밋해야 하는 변경 묶음 (인출, 만료, 회수). */
+    public static final String BATCH = "BATCH";
     /** 복제본 재연결 시 전체 상태. */
     public static final String SNAPSHOT = "SNAPSHOT";
     /** 변경이 없을 때도 주 브로커가 살아 있음을 알린다 (복제본의 주 브로커 응답 감시용). */

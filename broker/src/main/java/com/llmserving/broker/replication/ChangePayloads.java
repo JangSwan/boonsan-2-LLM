@@ -56,4 +56,10 @@ public final class ChangePayloads {
 
     public record Empty() {
     }
+
+    public record Entry(String kind, String payload) {
+    }
+
+    public record Batch(List<Entry> entries) {
+    }
 }

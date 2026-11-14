@@ -38,19 +38,31 @@ public class SharedQueue {
         return items.size();
     }
 
-    /** 버전 태그가 같은 작업을 앞에서부터 최대 k건 꺼낸다. 확인과 제거를 한 번에 한다. */
+    /**
+     * 버전 태그가 같은 작업을 앞에서부터 최대 k건 꺼낸다. 확인과 제거를 한 번에 한다.
+     * 재시도 중인 작업(lease 만료를 겪은 작업)은 한 번에 1건까지만 내준다: 엔진을 죽인 요청과 함께 만료된 작업들이
+     * 다음 워커에 다시 함께 실려 같이 죽는 일을 막아, 재시도 상한에 닿는 것이 그 요청 1건이 되게 한다 (sd4, R3 단점 2).
+     */
     public synchronized List<QueueItem> pullMatching(String versionTag, int k) {
         if (k <= 0) {
             return List.of();
         }
         List<QueueItem> picked = new ArrayList<>();
+        boolean retriedPicked = false;
         for (QueueItem item : items) {
             if (picked.size() >= k) {
                 break;
             }
-            if (versionTag.equals(item.versionTag())) {
-                picked.add(item);
+            if (!versionTag.equals(item.versionTag())) {
+                continue;
             }
+            if (item.getRetryCount() > 0) {
+                if (retriedPicked) {
+                    continue;
+                }
+                retriedPicked = true;
+            }
+            picked.add(item);
         }
         if (picked.isEmpty()) {
             return List.of();

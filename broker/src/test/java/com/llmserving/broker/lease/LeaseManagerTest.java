@@ -115,6 +115,24 @@ class LeaseManagerTest {
     }
 
     @Test
+    void 재시도_중인_작업은_한_번에_1건만_내줘_엔진을_죽인_요청과_같이_다니지_않게_한다() {
+        for (String id : new String[] {"x", "a", "b"}) {
+            broker.sharedQueue.push(BrokerFixture.item(id, "v1"));
+        }
+        leaseManager.pull("worker-1", "v1", 3);
+        broker.advance(10_000);
+        leaseManager.expireOverdue();     // x, a, b 모두 만료 1회 (엔진 장애)
+        broker.sharedQueue.push(BrokerFixture.item("fresh", "v1"));
+
+        List<Lease> next = leaseManager.pull("worker-2", "v1", 4);
+
+        assertThat(next).extracting(l -> l.getItem().getRetryCount()).filteredOn(c -> c > 0).hasSize(1);
+        assertThat(next).extracting(Lease::getRequestId).contains("fresh");
+        assertThat(leaseManager.pull("worker-3", "v1", 4)).hasSize(1);
+        assertThat(leaseManager.pull("worker-4", "v1", 4)).hasSize(1);
+    }
+
+    @Test
     void 같은_요청을_두_번_접수해도_한_번만_적재한다() {
         assertThat(broker.sharedQueue.push(BrokerFixture.item("a", "v1"))).isEqualTo(1);
         assertThat(broker.sharedQueue.push(BrokerFixture.item("b", "v1"))).isEqualTo(2);
