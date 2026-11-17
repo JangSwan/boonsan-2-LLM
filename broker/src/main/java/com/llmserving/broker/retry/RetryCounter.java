@@ -21,17 +21,22 @@ public class RetryCounter {
     private final QuarantineQueue quarantineQueue;
     private final FailureNotifier failureNotifier;
 
+    /**
+     * 만료 1회를 세고 재투입하거나 격리한다. 늘린 횟수는 사본에 담아 넘기고 원본(lease가 쥔 작업)은 바꾸지 않는다:
+     * 고립 등으로 커밋에 실패하면 lease가 그대로 남아 다음 주기에 다시 만료 처리되는데, 그때 같은 만료를 두 번 세지 않게 한다.
+     */
     public void onExpired(QueueItem item) {
-        item.increaseRetry();
-        if (retryPolicy.shouldRetry(item)) {
-            sharedQueue.requeue(item);
+        QueueItem retried = new QueueItem(item.getRequest(), item.getEnqueuedAt(), item.getRetryCount());
+        retried.increaseRetry();
+        if (retryPolicy.shouldRetry(retried)) {
+            sharedQueue.requeue(retried);
             log.info("event=retry.requeued requestId={} retryCount={} retryLimit={} msg=재시도 상한 미만, 공용 큐에 재투입",
-                    item.requestId(), item.getRetryCount(), retryPolicy.getRetryLimit());
+                    retried.requestId(), retried.getRetryCount(), retryPolicy.getRetryLimit());
             return;
         }
-        quarantineQueue.isolate(item);
+        quarantineQueue.isolate(retried);
         log.warn("event=retry.quarantined requestId={} retryCount={} retryLimit={} msg=재시도 상한 도달, 격리 후 실패 통지",
-                item.requestId(), item.getRetryCount(), retryPolicy.getRetryLimit());
-        failureNotifier.notifyFailure(item.requestId());
+                retried.requestId(), retried.getRetryCount(), retryPolicy.getRetryLimit());
+        failureNotifier.notifyFailure(retried.requestId());
     }
 }
