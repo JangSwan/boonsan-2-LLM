@@ -14,7 +14,7 @@ wait_log membership-1 'event=worker.reclaim-scheduled workerId=worker-5' 10
 
 log "sd3: 서버 소멸 (worker-5 정지)"
 svc_stop worker-5
-gone_at=$(date +%s)
+gone_at=$(( $(now_ms) / 1000 ))
 for i in $(seq 1 20); do ask "sd3-after-$i" "회수 후 질문 $i" 120 & done
 
 leader=""
@@ -29,14 +29,14 @@ done
 other=$([ "$leader" = membership-1 ] && echo membership-2 || echo membership-1)
 has_log "$other" 'event=worker.excluded workerId=worker-5' && fail "리더가 아닌 $other도 제외를 실행함"
 wait_log "$leader" 'event=recovery.service workerId=worker-5' 20
-t_service=$(( $(date +%s) - gone_at ))
+t_service=$(( $(( $(now_ms) / 1000 )) - gone_at ))
 alerts | jq -e 'any(.[]; .kind == "recovery.service")' >/dev/null || fail "복구 알림(T서비스)이 Monitoring에 없음"
 
 log "sd3: 재보충 (worker-spare 기동 → 적재·시험 → 합류)"
 wait_log fake-aws 'event=aws.instance-ready instanceId=worker-spare' 30
 wait_log worker-spare 'event=worker.ready' 30
 wait_log "$leader" 'event=recovery.replenished workerId=worker-5' 30
-t_replenish=$(( $(date +%s) - gone_at ))
+t_replenish=$(( $(( $(now_ms) / 1000 )) - gone_at ))
 alerts | jq -e 'any(.[]; .kind == "recovery.replenished")' >/dev/null || fail "합류 알림(T재보충)이 Monitoring에 없음"
 wait
 

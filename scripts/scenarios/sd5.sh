@@ -9,10 +9,10 @@ queued=$(curl -s "$BROKER_PRIMARY/api/broker/queue/metrics" | jq -r '.queueLengt
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BROKER_REPLICA/api/broker/requests/x/position")
 [ "$code" = 503 ] || fail "승격 전 복제본이 순번 조회에 $code로 응답 (503 기대)"
 svc_stop broker-primary
-stopped_at=$(date +%s)
+stopped_at=$(( $(now_ms) / 1000 ))
 
 wait_log broker-replica 'event=broker.promoted epoch=2' 30
-promote_sec=$(( $(date +%s) - stopped_at ))
+promote_sec=$(( $(( $(now_ms) / 1000 )) - stopped_at ))
 for i in $(seq 1 10); do ask "sd5-after-$i" "승격 후 질문 $i" 120 & done
 wait
 

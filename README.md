@@ -72,10 +72,14 @@ docker compose logs -f | grep -E 'event=(worker\.excluded|lease\.reclaimed|broke
 
 자격 증명과 엔진 주소는 `.env`로만 받는다 (커밋하지 않음).
 
+real 모드 전제: AWS가 만든 대체 인스턴스의 `INSTANCE_ID`는 그 **EC2 인스턴스 ID**여야 한다. `Replenisher`는 `SpotInstancePort`가 돌려준 인스턴스 ID와 하트비트의 `workerId`가 같을 때 합류를 확인하기 때문이다 (mock에서는 fake-aws가 `worker-spare`를 돌려준다). 시작 템플릿(user-data)에서 인스턴스 메타데이터로 이 값을 넣는다. 이 전제가 지켜지면 대체 서버는 늘 새 ID로 합류하므로 중복 방지 키 `replace-<workerId>`(EC2 clientToken)가 다른 장애와 겹치지 않는다.
+
 ## 설계에서 정하지 않아 구현에서 정한 것
 
 `docs/design.md` 5절에 더해 구현 중 정한 것. 팀 검토가 필요하면 여기를 본다.
 
+- **Prefill 조각 채우는 순서**: `EngineScheduler`는 스텝 예산 B 안에서 Decode 전부를 넣은 뒤, Prefill 조각을 **남은 입력이 적은 요청부터** 채운다. EA는 B 안의 순서를 정하지 않았고, sd2의 "짧은 요청 S가 다음 스텝에 통째로 끼어든다"를 만들려면 이 순서가 필요하다. 엔진(가짜 엔진, vLLM)이 알아서 고르는 것이 아니라 스케줄러가 정하므로 T3 전략 그대로다. 긴 입력 L은 매 스텝 남은 예산만큼 계속 읽힌다.
+- **재시도 횟수 사본**: `RetryCounter`는 늘린 재시도 횟수를 작업 사본에 담아 재투입·격리하고, lease가 쥔 원본은 커밋이 성공할 때만 대체된다. 고립으로 커밋에 실패해도 같은 만료를 두 번 세지 않는다.
 - **복제 묶음(BATCH)**: 인출(큐 제거 + lease 발급), 만료(lease 제거 + 재투입·격리), 회수(lease 제거 + 재투입)는 복제 메시지 하나로 커밋한다. 둘로 나누면 중간에 주 브로커가 죽을 때 요청이 사라진다 (sd5에서 실제로 재현해 고침).
 - **재시도 작업 분산**: `SharedQueue.pullMatching`은 재시도 중인 작업을 pull 한 번에 1건까지만 내준다. 엔진을 죽인 요청과 같이 만료된 정상 요청이 다음 워커에 같이 실려 함께 격리되는 것을 막는다 (sd4 "그 요청 1건만 실패").
 - **엔진 재시작 중 여유 0**: 엔진이 비정상 종료하면 생성 시험이 다시 통과할 때까지 `EngineScheduler.freeCapacity()`가 여유 0을 알린다.
@@ -85,3 +89,11 @@ docker compose logs -f | grep -E 'event=(worker\.excluded|lease\.reclaimed|broke
 - **롤백**: 교체 도중이면 목표를 취소하고 활성 버전으로 되돌리며, 교체 완료 후면 U0를 새 버전으로 같은 롤링 절차를 쓴다.
 - **품질 샘플 입력**: mock 모드에는 실제 응답 평가기가 없으므로 `POST /api/monitoring/quality-samples`로 샘플을 넣는다 (운영자 화면의 "품질 이상 주입").
 - **접수 재시도**: Front Gateway는 broker가 느리거나 승격 중이면 오류 대신 같은 요청 ID로 최대 20초 동안 다시 보낸다 (broker가 같은 요청 ID를 한 번만 적재).
+
+## 알려진 한계
+
+시연(mock) 범위에서는 문제가 되지 않아 남겨 둔 것.
+
+- **기다리는 요청의 진척**: `LeaseRenewer`는 스텝에 실제로 들어간 요청만 갱신한다 (진척이 끊기면 갱신을 멈춘다는 sd4 규칙). 짧은 요청이 몰리면 긴 입력이 한두 스텝 조각을 못 받을 수 있지만, 워커당 슬롯이 8이고 먼저 들어간 요청은 Prefill 뒤 Decode(스텝당 1토큰)로 넘어가므로, B 하한 256에서 밀림은 수백 ms 수준이라 진척 제한(4초)·lease TTL(10초)에 닿지 않는다. "엔진이 정상이면 워커가 든 요청 전부 갱신"으로 바꾸면 엔진이 죽지 않고 멈췄을 때 lease가 영원히 갱신되어 sd4 보호가 깨지므로 하지 않았다.
+- **리더 교체 중 재보충 기록**: `Replenisher`의 대기 목록(대체 인스턴스 → 장애 워커)은 리더 메모리에만 있다. 재보충 도중 리더가 바뀌면 새 워커의 합류는 확인되지만 그 장애의 T재보충 기록과 알림은 빠진다. Membership은 데이터 복제 없이 하트비트로 다시 채우는 설계라 복제하지 않았다.
+- **409 LEASE_NOT_OWNED**: lease ID는 발급마다 새 UUID라 한 lease는 한 워커의 것이고, 회수·만료된 lease는 지워져 404가 난다. 남의 lease를 갱신·완료하는 상황이 구조상 생기지 않으므로 renew·complete API에 workerId를 더하지 않았다.

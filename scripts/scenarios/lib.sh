@@ -52,17 +52,24 @@ ask() {
     --max-time "$max" >"$OUT/$name.sse" 2>/dev/null || true
 }
 
-# 백그라운드로 질문하고, 첫 토큰을 받은 시각(밀리초)을 따로 기록한다.
+# 되돌아가지 않는 시계(부팅 후 경과, 10ms 단위)로 밀리초를 잰다. 벽시계(date)는 실행 중 NTP 보정으로 뒤로 갈 수 있다.
+now_ms() {
+  local up
+  read -r up _ </proc/uptime
+  echo $(( 10#${up/./} * 10 ))
+}
+
+# 백그라운드로 질문하고, 첫 토큰까지 걸린 시간(밀리초)을 따로 기록한다.
 ask_timed() {
   local name=$1 text=$2 max=${3:-60}
   printf '%s' "$text" >"$OUT/$name.txt"
   (
-    start=$(date +%s%3N)
+    start=$(now_ms)
     jq -n --rawfile t "$OUT/$name.txt" '{text: $t}' | curl -sN -X POST "$FG/api/front-gateway/questions" \
       -H 'Content-Type: application/json' -H 'Accept: text/event-stream' --data-binary @- --max-time "$max" 2>/dev/null \
       | while IFS= read -r line; do
           if [[ "$line" == *'"isFirst":true'* && ! -f "$OUT/$name.first" ]]; then
-            echo $(( $(date +%s%3N) - start )) >"$OUT/$name.first"
+            echo $(( $(now_ms) - start )) >"$OUT/$name.first"
           fi
           echo "$line"
         done >"$OUT/$name.sse" || true

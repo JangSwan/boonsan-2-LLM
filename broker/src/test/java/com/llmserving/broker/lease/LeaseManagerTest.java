@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.llmserving.broker.BrokerFixture;
+import com.llmserving.broker.queue.QueueItem;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -130,6 +131,30 @@ class LeaseManagerTest {
         assertThat(next).extracting(Lease::getRequestId).contains("fresh");
         assertThat(leaseManager.pull("worker-3", "v1", 4)).hasSize(1);
         assertThat(leaseManager.pull("worker-4", "v1", 4)).hasSize(1);
+    }
+
+    @Test
+    void 고립으로_만료_처리를_커밋하지_못하면_다음_주기에_같은_만료를_두_번_세지_않는다() {
+        BrokerFixture.FakeLock lock = new BrokerFixture.FakeLock();
+        BrokerFixture isolated = new BrokerFixture("broker-primary", true, false, new BrokerFixture.MutableClock(), lock);
+        isolated.replicator.maintain();
+        isolated.sharedQueue.push(BrokerFixture.item("x", "v1"));
+        isolated.leaseManager.pull("worker-1", "v1", 1);
+        isolated.advance(10_000);
+
+        lock.reachable = false;                 // 복제본도 없고 락도 갱신 못 함: 쓰기 중지 (sd5 규칙 3)
+        isolated.advance(4_000);
+        isolated.leaseManager.expireOverdue();
+        isolated.leaseManager.expireOverdue();
+        assertThat(isolated.leaseManager.activeCount()).isEqualTo(1);   // 커밋 실패: lease 그대로
+
+        lock.reachable = true;
+        isolated.replicator.maintain();
+        isolated.leaseManager.expireOverdue();
+
+        assertThat(isolated.quarantineQueue.list()).isEmpty();
+        assertThat(isolated.sharedQueue.items()).singleElement()
+                .extracting(QueueItem::getRetryCount).isEqualTo(1);
     }
 
     @Test

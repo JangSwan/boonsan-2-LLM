@@ -19,6 +19,7 @@ done
 short_max=$(cat "$OUT"/sd2-S*.first | sort -n | tail -1)
 long_min=$(cat "$OUT"/sd2-L*.first | sort -n | head -1)
 log "짧은 질문 첫 토큰 최대 ${short_max}ms, 긴 입력 첫 토큰 최소 ${long_min}ms"
+[ "$long_min" -ge 0 ] && [ "$short_max" -ge 0 ] || fail "측정값이 음수 (시계 문제)"
 [ "$short_max" -lt "$long_min" ] || fail "짧은 질문이 긴 입력보다 늦게 첫 토큰을 받음"
 [ "$short_max" -lt 3000 ] || fail "짧은 질문 첫 토큰 ${short_max}ms ≥ 3초"
 pass "sd2: 짧은 질문 5건이 모두 긴 입력의 Prefill 완료 전에 첫 토큰을 받음 (최대 ${short_max}ms < ${long_min}ms)"
