@@ -20,14 +20,14 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$MM/api/model-manager/swa
 log "sd6: FP8 교체 요청, 교체 중에도 질문을 계속 보낸다"
 curl -sf -X POST "$MM/api/model-manager/swaps" -H 'Content-Type: application/json' \
   -d '{"model":"llama-3.1-8b","stage":"FP8"}' >/dev/null || fail "FP8 교체 요청 실패"
-start=$(date +%s)
+start=$(( $(now_ms) / 1000 ))
 i=0
-while [ "$(status | jq -r .status)" != COMPLETED ] && [ $(( $(date +%s) - start )) -lt 180 ]; do
+while [ "$(status | jq -r .status)" != COMPLETED ] && [ $(( $(( $(now_ms) / 1000 )) - start )) -lt 180 ]; do
   i=$((i + 1)); ask "sd6-swap-$i" "교체 중 질문 $i" 90 &
   sleep 0.7
 done
 wait_status COMPLETED 5
-elapsed=$(( $(date +%s) - start ))
+elapsed=$(( $(( $(now_ms) / 1000 )) - start ))
 wait
 for n in $(seq 1 "$i"); do assert_completed "sd6-swap-$n"; done
 [ "$(status | jq -r .activeStage)" = FP8 ] || fail "활성 단계가 FP8이 아님"
@@ -42,8 +42,8 @@ for n in 1 2 3 4 5; do
 done
 wait_status ROLLING_BACK 10
 j=0
-start=$(date +%s)
-while [ "$(status | jq -r .status)" != ROLLED_BACK ] && [ $(( $(date +%s) - start )) -lt 180 ]; do
+start=$(( $(now_ms) / 1000 ))
+while [ "$(status | jq -r .status)" != ROLLED_BACK ] && [ $(( $(( $(now_ms) / 1000 )) - start )) -lt 180 ]; do
   j=$((j + 1)); ask "sd6-rb-$j" "롤백 중 질문 $j" 90 &
   sleep 0.7
 done
