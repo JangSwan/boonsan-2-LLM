@@ -1000,6 +1000,19 @@ EA 시퀀스의 메시지는 한국어 설명으로 되어 있다. 아래 표의
 - DTO를 앱마다 따로 두지 않고 `common` 한 곳에 모은다. 한 저장소에서 함께 빌드·배포하므로, 보내는 쪽과 받는 쪽이 같은 규격을 쓰고 필드가 어긋나면 컴파일에서 드러나게 하는 것이 앱별 독립 수정보다 중요하다고 판단했다.
 - 대가: DTO 하나를 바꾸면 그 DTO를 쓰는 모든 앱이 함께 바뀐다. 그래서 `common`에는 로직을 두지 않고, DTO나 API 경로를 바꾸기 전에 팀에 알린다(`CLAUDE.md` 7절). JSON 왕복은 `DtoJsonContractTest`로 확인한다.
 
+**얇은 REST 입구와 앱 시작점 (`CLAUDE.md` 3절 Port 목록, 4절)**
+- EA에 그린 입구 클래스는 설계상 책임이 있는 것뿐이다: `QuestionController`, `AdmissionController`, `ModelSwapController`. 이들은 시퀀스에 lifeline으로 나오고, EA에 그려진 호출을 그대로 한다(예: QuestionController → RequestIdIssuer·VersionTagger·QueueBrokerClient·StreamRelay).
+- EA는 컴포넌트 사이 호출을 "Worker → StreamRelay"처럼 바로 부르는 것으로 그린다. 코드에서는 앱이 달라 HTTP로만 부르므로, 받는 쪽 앱에 HTTP 요청을 받아 EA 클래스 하나에 넘기기만 하는 얇은 입구를 둔다. 책임이 없는 배관이라 EA에는 그리지 않는다.
+  - front-gateway: `StreamController` → StreamRelay (토큰 수신, 실패 통지)
+  - broker: `LeaseController` → LeaseManager, `QueueMetricsController` → SharedQueue, `ReplicationController` → BrokerReplica
+  - worker: `WorkerController` → WorkerAgent(인출 중지), EngineScheduler(지표)
+  - membership: `HeartbeatController` → HealthDetector, `NoticeController` → NoticeHandler(회수 통지), Replenisher(기동 완료)
+  - model-manager: `ModelConfigController` → ModelConfig, ModelStorePort, QualityGate
+  - monitoring: `AlertController` → AlertService, `MetricsController` → MetricsCollector, `QualitySampleController` → SampleForwarder
+- 얇은 입구는 대상 클래스와 같은 패키지에 두고(대상이 여럿이면 Port 목록의 첫 대상 패키지), 위임만 하며 업무 규칙을 넣지 않는다. boundary 클래스를 직접 참조하지 않는 것은 ArchUnit으로 검사한다(`CLAUDE.md` 8절).
+- 앱마다 Spring Boot 시작점 `XxxApplication`(예: `BrokerApplication`)이 모듈 기본 패키지에 하나씩 있다. 기술적으로 필요한 클래스라 EA에 그리지 않는다.
+- fake-aws의 `FakeAwsController`는 외부 액터 AWS(스팟)를 흉내 내는 시연 앱의 입구라 EA 밖이다(`CLAUDE.md` 2절 "가짜 AWS").
+
 **질문 접수와 스트림**
 - 질문은 긴 입력을 담으므로 `POST /api/front-gateway/questions` 한 번으로 보내고, 같은 응답을 SSE 스트림으로 유지한다. 순번 안내, 토큰, 실패 통지가 모두 이 스트림으로 간다.
 - 대기 중 순번 갱신은 Front Gateway가 주기적으로 `QueueBrokerClient.getPosition(requestId)`를 조회해 `StreamRelay.notifyPosition()`으로 보낸다.
