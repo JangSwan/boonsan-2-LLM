@@ -118,6 +118,13 @@ public final class WorkerTestSupport {
         }
 
         @Override
+        public int remainingFor(String workerId, String versionTag) {
+            synchronized (queue) {
+                return (int) queue.stream().filter(r -> versionTag.equals(r.versionTag())).count();
+            }
+        }
+
+        @Override
         public void renew(String requestId) {
             if (gone.contains(requestId)) {
                 throw new LeaseGoneException(requestId);

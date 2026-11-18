@@ -83,6 +83,11 @@ public class LeaseManager {
         return issued;
     }
 
+    /** 공용 큐에 남은 같은 버전 작업 수. pull 응답에 실어 보낸다 (sd6 마지막 워커의 드레인 종료 판단). */
+    public int remainingFor(String versionTag) {
+        return sharedQueue.countMatching(versionTag);
+    }
+
     /** 진척이 보고된 요청의 lease 만료 시각을 연장한다 (sd4 6~7번). */
     public synchronized Lease renew(String leaseId) {
         replicator.ensurePrimary();

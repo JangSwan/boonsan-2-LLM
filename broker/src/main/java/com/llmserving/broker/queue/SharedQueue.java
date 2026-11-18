@@ -90,6 +90,17 @@ public class SharedQueue {
         return items.size();
     }
 
+    /** 버전 태그가 같은 대기 작업 수 (sd6: 현재 버전의 마지막 워커가 남은 작업을 다 가져갔는지 확인). */
+    public int countMatching(String versionTag) {
+        int count = 0;
+        for (QueueItem item : items) {
+            if (versionTag.equals(item.versionTag())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     public long currentEpoch() {
         return replicator.currentEpoch();
     }

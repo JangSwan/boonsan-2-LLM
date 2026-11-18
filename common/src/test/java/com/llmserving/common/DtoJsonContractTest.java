@@ -40,7 +40,7 @@ class DtoJsonContractTest {
         Request request = new Request("req-1", "v1", 4000, 1_700_000_000_000L, "긴 입력");
         LeaseResponse lease = new LeaseResponse("lease-1", "req-1", "worker-1",
                 1_700_000_030_000L, request, 1L);
-        PullResponse response = new PullResponse("worker-1", List.of(lease), 1L);
+        PullResponse response = new PullResponse("worker-1", List.of(lease), 1L, 3);
 
         PullResponse restored = mapper.readValue(mapper.writeValueAsString(response), PullResponse.class);
 

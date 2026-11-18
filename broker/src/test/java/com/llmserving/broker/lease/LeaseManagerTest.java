@@ -39,6 +39,21 @@ class LeaseManagerTest {
     }
 
     @Test
+    void 상한에_걸려_빈_pull이어도_남은_같은_버전_작업_수를_알려준다() {
+        for (int i = 0; i < 6; i++) {
+            broker.sharedQueue.push(BrokerFixture.item("r" + i, "v1"));
+        }
+        broker.sharedQueue.push(BrokerFixture.item("new", "v2"));
+        leaseManager.pull("worker-1", "v1", 4);                  // 상한 4를 다 쓴다
+
+        assertThat(leaseManager.pull("worker-2", "v1", 4)).isEmpty();
+        assertThat(leaseManager.remainingFor("v1")).isEqualTo(2);   // 빈 pull이라도 옛 버전 작업은 남아 있다
+        assertThat(leaseManager.remainingFor("v2")).isEqualTo(1);
+        assertThat(leaseManager.pull("worker-2", "v1", 0)).isEmpty(); // n = 0 확인은 상한을 쓰지 않는다
+        assertThat(broker.leaseLimiter.getActiveLeases()).isEqualTo(4);
+    }
+
+    @Test
     void 큐에_작업이_모자라면_쓰지_않은_허용을_돌려준다() {
         broker.sharedQueue.push(BrokerFixture.item("a", "v1"));
 

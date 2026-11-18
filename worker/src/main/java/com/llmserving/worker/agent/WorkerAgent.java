@@ -54,6 +54,7 @@ public class WorkerAgent {
     private volatile boolean draining;
     private volatile boolean lastOfVersion;
     private volatile long drainStartedAt;
+    private volatile long noOldWorkSince;
 
     public WorkerAgent(WorkerProperties properties, CreditManager creditManager, ModelRuntime modelRuntime,
                        HeartbeatPort heartbeatPort, ModelConfigPort modelConfigPort, Clock clock) {
@@ -192,6 +193,7 @@ public class WorkerAgent {
             draining = true;
             lastOfVersion = grant.lastOfVersion();
             drainStartedAt = clock.millis();
+            noOldWorkSince = 0;
             state = STATE_DRAINING;
             if (!lastOfVersion) {
                 creditManager.stopPull();
@@ -200,8 +202,7 @@ public class WorkerAgent {
                     workerId, versionTag, desiredVersion, lastOfVersion);
         }
         if (creditManager.isPulling()) {
-            long quietSince = Math.max(drainStartedAt, creditManager.lastNonEmptyPullAt());
-            if (clock.millis() - quietSince < properties.lastDrainQuietMs()) {
+            if (!oldVersionWorkDone()) {
                 return;  // 옛 버전 작업을 마저 가져가는 중
             }
             creditManager.stopPull();
@@ -226,5 +227,28 @@ public class WorkerAgent {
         state = STATE_PULLING;
         log.info("event=model.worker-swapped workerId={} versionTag={} stage={} msg=준비 완료 보고, 새 버전 인출",
                 workerId, desiredVersion, desiredStage.name());
+    }
+
+    /**
+     * 현재 버전의 마지막 워커가 인출을 멈춰도 되는지 (sd6, 큐에 옛 버전 작업이 남지 않게).
+     * "한동안 빈 pull"만으로는 판단하지 않는다: 피크에는 슬롯이 차 크레딧이 0이거나 4대분 상한에 걸려
+     * 빈 pull이 이어져도 큐에 옛 버전 작업이 남아 있을 수 있다. 그래서 broker에 남은 같은 버전 작업 수를 묻고,
+     * 남은 작업과 진행 중 답변이 모두 0인 상태가 조용한 시간(last-drain-quiet-ms) 동안 이어질 때만 멈춘다.
+     * 조용한 시간은 Front Gateway가 비율을 다시 읽기 전에 옛 버전 태그로 막 들어온 요청을 받기 위한 여유다.
+     */
+    private boolean oldVersionWorkDone() {
+        int remaining = creditManager.remainingForVersion();
+        long now = clock.millis();
+        if (remaining > 0 || creditManager.inFlightCount() > 0) {
+            noOldWorkSince = 0;
+            log.debug("event=model.drain-waiting workerId={} remaining={} inFlight={} msg=옛 버전 작업 처리 중",
+                    workerId, remaining, creditManager.inFlightCount());
+            return false;
+        }
+        if (noOldWorkSince == 0) {
+            noOldWorkSince = now;
+        }
+        long quietSince = Math.max(noOldWorkSince, creditManager.lastNonEmptyPullAt());
+        return now - quietSince >= properties.lastDrainQuietMs();
     }
 }

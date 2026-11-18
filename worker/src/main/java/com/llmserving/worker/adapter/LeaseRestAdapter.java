@@ -52,6 +52,21 @@ public class LeaseRestAdapter implements LeasePort {
     }
 
     @Override
+    public int remainingFor(String workerId, String versionTag) {
+        PullResponse response = call(client -> {
+            PullResponse r = client.post().uri(ApiPaths.Broker.LEASES_PULL)
+                    .body(new PullRequest(workerId, versionTag, 0))
+                    .retrieve().body(PullResponse.class);
+            checkEpoch(r == null ? 0 : r.epoch());
+            return r;
+        });
+        if (response == null) {
+            throw new UpstreamUnavailableException("broker 응답 없음", null);
+        }
+        return response.remainingForVersion();
+    }
+
+    @Override
     public void renew(String requestId) {
         String leaseId = leaseByRequest.get(requestId);
         if (leaseId == null) {

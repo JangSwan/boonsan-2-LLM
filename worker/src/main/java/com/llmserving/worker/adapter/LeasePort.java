@@ -12,6 +12,12 @@ public interface LeasePort {
 
     List<LeaseResponse> pull(String workerId, String versionTag, int n);
 
+    /**
+     * 공용 큐에 남은 같은 버전 작업 수. 인출 없이(n = 0 pull) 확인한다 (sd6 마지막 워커의 드레인 종료 판단).
+     * broker가 응답하지 않으면 UpstreamUnavailableException.
+     */
+    int remainingFor(String workerId, String versionTag);
+
     /** lease가 이미 없으면(회수, 만료) LeaseGoneException. */
     void renew(String requestId);
 

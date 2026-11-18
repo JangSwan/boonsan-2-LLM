@@ -160,6 +160,14 @@ public class CreditManager implements EngineEventListener {
         return lastNonEmptyPullAt;
     }
 
+    /**
+     * 공용 큐에 남은 내 버전 작업 수 (sd6 마지막 워커의 드레인 종료 판단). 크레딧이 0이어도 인출 없이 확인한다.
+     * broker가 응답하지 않으면 UpstreamUnavailableException.
+     */
+    public int remainingForVersion() {
+        return leasePort.remainingFor(workerId, versionTag);
+    }
+
     public int lastUnstartedTokens() {
         return lastUnstartedTokens;
     }
