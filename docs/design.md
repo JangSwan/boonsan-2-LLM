@@ -10,6 +10,9 @@ EA가 바뀌면 이 문서를 다시 만든다. 이 문서와 EA가 다르면 EA
   - `Lease.item` (lease가 작업을 담아 워커 전달, 만료 시 재시도, 회수 시 재투입에 사용)
   - `ChangeRecord.epoch` (sd5 fencing)
   - Membership 노트: 기동 완료는 두 제어기가 모두 받고 리더만 처리
+- 4차 수정(2026-11-18)에서 EA에 반영한 것
+  - sd1·sd2·sd4·sd6 반복 프래그먼트를 loop로, 조건 하나짜리 프래그먼트를 opt로 바로잡음
+  - sd6 마지막 워커 드레인 판단용 오퍼레이션: `SharedQueue.countMatching(versionTag)`, `LeaseManager.remainingFor(versionTag)`, `CreditManager.remainingForVersion()` (5절)
 
 ## 목차
 1. 런타임 뷰 (컴포넌트와 연결)
@@ -429,6 +432,7 @@ EA가 바뀌면 이 문서를 다시 만든다. 이 문서와 EA가 다르면 EA
 
 **LeaseManager** (control) — pull, lease 발급, 갱신, 만료, 회수
 - 오퍼레이션 `pull(workerId: String, versionTag: String, n: int): List<Lease>`
+- 오퍼레이션 `remainingFor(versionTag: String): int` — 공용 큐에 남은 같은 버전 작업 수. pull 응답에 실어 보낸다 (sd6, 5절)
 - 오퍼레이션 `renew(leaseId: String): void`
 - 오퍼레이션 `complete(leaseId: String): void`
 - 오퍼레이션 `expireOverdue(): void`
@@ -456,6 +460,7 @@ EA가 바뀌면 이 문서를 다시 만든다. 이 문서와 EA가 다르면 EA
 - 오퍼레이션 `requeue(item: QueueItem): void`
 - 오퍼레이션 `positionOf(requestId: String): int`
 - 오퍼레이션 `length(): int`
+- 오퍼레이션 `countMatching(versionTag: String): int` — 버전 태그가 같은 대기 작업 수 (sd6, 5절)
 
 ### QueueBroker/Replication  →  `com.llmserving.broker.replication`
 
@@ -556,6 +561,7 @@ EA가 바뀌면 이 문서를 다시 만든다. 이 문서와 EA가 다르면 EA
 - 오퍼레이션 `onFirstToken(requestId: String, unstartedTokens: int): void`
 - 오퍼레이션 `onProgress(requestId: String): void`
 - 오퍼레이션 `onCompleted(requestId: String): void` — 엔진 완료 이벤트. 요청 ID로 lease를 찾아 complete ack, 크레딧 반환
+- 오퍼레이션 `remainingForVersion(): int` — 공용 큐에 남은 내 버전 작업 수. 크레딧이 0이어도 인출 없이(n = 0 pull) 확인한다 (sd6, 5절)
 
 ### Worker/LeaseRenewal  →  `com.llmserving.worker.leaserenewal`
 
@@ -955,6 +961,15 @@ EA 시퀀스의 메시지는 한국어 설명으로 되어 있다. 아래 표의
 
 **인출 재개**
 - EA에는 `CreditManager.stopPull()`만 있고 다시 시작하는 오퍼레이션이 없다. sd6처럼 `setVersion(versionTag)`이 호출되면 인출을 다시 시작한다.
+
+**sd6 마지막 워커의 드레인 (옛 버전 작업 남기지 않기)**
+- EA sd6은 워커가 한 대씩 드레인·재적재하는 흐름만 그린다. 그런데 태그는 접수 시점 비율로 붙고 인출은 버전 일치 작업만 하므로, 현재 버전을 인출하는 마지막 워커가 멈추면 큐에 남은 옛 버전 작업을 가져갈 워커가 없어진다. 롤백도 같다.
+- 그래서 `ModelConfig.onDrainStart(workerId)`는 드레인 허가와 함께 "현재 버전을 인출하는 마지막 워커인지"(`lastOfVersion`)를 알려 준다(`DrainStartResponse`). 마지막이 아닌 워커는 허가 즉시 인출을 멈춘다.
+- 마지막 워커는 인출을 계속하다가, 큐에 남은 같은 버전 작업(`CreditManager.remainingForVersion()` → `LeaseManager.remainingFor()` → `SharedQueue.countMatching()`)과 진행 중 답변이 모두 0인 상태가 `last-drain-quiet-ms` 동안 이어질 때만 멈춘다(`WorkerAgent` 내부 판단).
+- "빈 pull이 이어지면 멈춘다"로 판단하지 않는다. 피크에는 슬롯이 차 크레딧이 0이거나 4대분 상한에 걸려 빈 pull이 이어져도 옛 버전 작업이 남아 있을 수 있다.
+- 남은 수는 새 API 없이 기존 pull 응답(`PullResponse.remainingForVersion`)에 싣고, 크레딧이 0일 때는 n = 0 pull로 확인한다(상한을 쓰지 않음). 런타임 뷰에 없는 호출은 만들지 않는다.
+- 조용한 시간(`last-drain-quiet-ms`)은 Front Gateway가 비율을 다시 읽기 전에 옛 태그로 막 들어온 요청을 받기 위한 여유다.
+- 한계: 마지막 워커가 멈춘 뒤 그 버전 작업이 엔진 크래시로 lease 만료되어 다시 큐에 들어오면 가져갈 워커가 없다(드레인 중 엔진 장애라는 이중 장애).
 
 **복제 커밋**
 - sd5 6번 "커밋"은 오퍼레이션이 없다. `SharedQueue.push()`와 `LeaseManager`의 상태 변경이 `Replicator.replicate()`의 결과를 받은 뒤 반영하는 방식으로 만든다.
