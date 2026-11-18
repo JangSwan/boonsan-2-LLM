@@ -159,7 +159,7 @@
     - worker: `agent`, `credit`, `scheduling`, `budget`, `runtime`, `leaserenewal`
     - membership: `detection`, `leader`, `recovery`
   - front-gateway, model-manager, monitoring은 하위 패키지 없이 모듈 패키지 하나에 둔다.
-  - client 모듈은 EA의 두 패키지 그대로 `webui`, `apiclient`로 나눈다.
+  - client 모듈의 Java 하위 패키지는 `apiclient` 하나다. EA의 WebUI 패키지는 브라우저 화면이라 Java 패키지로 만들지 않는다(2절).
 - 구현하면서 추가하는 기술 패키지는 두 개만 허용한다: `adapter`(새로 만드는 Port 인터페이스와 `XxxRestAdapter`), `config`(설정·빈 등록). EA에 있는 클래스는 이 패키지로 옮기지 않고 EA 패키지에 둔다(예: QueueBrokerClient는 front-gateway 패키지에 두고 AdmissionPort를 구현한다).
 - 새로 추가하는 REST 입구 클래스는 그 입구가 넘겨주는 대상 클래스와 같은 패키지에 둔다(예: LeaseController는 `broker.lease`). 대상이 여러 패키지에 걸치면 Port 목록 표에서 첫 번째 대상의 패키지에 둔다(WorkerController는 `worker.agent`, NoticeController는 `membership.detection`).
 

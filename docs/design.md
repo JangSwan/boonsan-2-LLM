@@ -186,7 +186,7 @@ EA가 바뀌면 이 문서를 다시 만든다. 이 문서와 EA가 다르면 EA
 ## 2. 패키지와 클래스
 
 - Java 패키지는 모듈명에서 하이픈을 뺀 이름을 쓴다(front-gateway → `frontgateway`, model-manager → `modelmanager`, fake-aws → `fakeaws`).
-- `client.webui`의 클래스(WebUI, AdminConsole, SseClient)는 정적 HTML + JavaScript 모듈로, 같은 이름의 JS 파일·함수로 만든다. SseClient는 `fetch()` POST 응답을 SSE 형식으로 읽는다.
+- WebUI 패키지의 클래스(WebUI, AdminConsole, SseClient)는 정적 HTML + JavaScript 모듈로, 같은 이름의 JS 파일·함수로 만든다. SseClient는 `fetch()` POST 응답을 SSE 형식으로 읽는다.
 - 설정 파일(«xml»)은 각 모듈의 `application.yml` 설정 키와 `XxxProperties`로 만든다.
 
 ### ApiClient  →  `com.llmserving.client.apiclient`
@@ -486,7 +486,7 @@ EA가 바뀌면 이 문서를 다시 만든다. 이 문서와 EA가 다르면 EA
 **FailureNotifier** (인터페이스) — 격리된 요청의 실패 통지 포트. Front Gateway가 구현
 - 오퍼레이션 `notifyFailure(requestId: String): void`
 
-### WebUI  →  `com.llmserving.client.webui`
+### WebUI  →  `client/src/main/resources/static` (Java 패키지 없음)
 
 **AdminConsole** (boundary) — 운영자 화면: 모델 교체 요청, 처리 현황, 알림
 - 오퍼레이션 `requestModelSwap(model: String, stage: String): void`
