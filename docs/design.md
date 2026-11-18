@@ -991,6 +991,15 @@ EA 시퀀스의 메시지는 한국어 설명으로 되어 있다. 아래 표의
 - 실패: 엔진이 응답하지 않거나 연결이 끊기면 두 구현 모두 예외를 던진다. 진척 보고가 끊기므로 sd4의 lease 만료, 재시도, 격리 경로가 mock과 real에서 같게 일어난다.
 - 엔진 주소는 OpenAI 호환 API면 어디든 된다(자체 vLLM, 호환 API를 주는 클라우드 서비스). 다만 호스팅 API에서는 `loadWeights`(사다리 단계), KV 용량을 제어할 수 없으므로 생성 확인 용도로만 쓴다.
 
+**common 모듈의 DTO와 API 경로 (`CLAUDE.md` 2절, 3절)**
+- EA의 Common 패키지에는 컴포넌트 사이를 오가는 도메인 데이터(entity) 4개만 있다: Request, StreamChunk, WorkerStatus, QualitySample.
+- 코드의 `common`에는 이 4개와 함께, 앱끼리 HTTP(JSON)로 주고받기 위한 기술 보조 클래스를 둔다. 업무 규칙이 없어서 EA에는 그리지 않는다.
+  - 요청/응답 DTO: `XxxRequest`, `XxxResponse` (예: `PullRequest`, `PullResponse`, `LeaseResponse`). Java `record`로 만든다.
+  - API 경로 상수: `ApiPaths`
+  - 에러 응답: `ErrorResponse`, `ErrorCode`
+- DTO를 앱마다 따로 두지 않고 `common` 한 곳에 모은다. 한 저장소에서 함께 빌드·배포하므로, 보내는 쪽과 받는 쪽이 같은 규격을 쓰고 필드가 어긋나면 컴파일에서 드러나게 하는 것이 앱별 독립 수정보다 중요하다고 판단했다.
+- 대가: DTO 하나를 바꾸면 그 DTO를 쓰는 모든 앱이 함께 바뀐다. 그래서 `common`에는 로직을 두지 않고, DTO나 API 경로를 바꾸기 전에 팀에 알린다(`CLAUDE.md` 7절). JSON 왕복은 `DtoJsonContractTest`로 확인한다.
+
 **질문 접수와 스트림**
 - 질문은 긴 입력을 담으므로 `POST /api/front-gateway/questions` 한 번으로 보내고, 같은 응답을 SSE 스트림으로 유지한다. 순번 안내, 토큰, 실패 통지가 모두 이 스트림으로 간다.
 - 대기 중 순번 갱신은 Front Gateway가 주기적으로 `QueueBrokerClient.getPosition(requestId)`를 조회해 `StreamRelay.notifyPosition()`으로 보낸다.
