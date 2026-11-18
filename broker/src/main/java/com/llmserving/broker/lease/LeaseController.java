@@ -29,7 +29,8 @@ public class LeaseController {
         List<Lease> leases = leaseManager.pull(request.workerId(), request.versionTag(), request.n());
         long epoch = leaseManager.currentEpoch();
         return new PullResponse(request.workerId(),
-                leases.stream().map(l -> toResponse(l, true, epoch)).toList(), epoch);
+                leases.stream().map(l -> toResponse(l, true, epoch)).toList(), epoch,
+                leaseManager.remainingFor(request.versionTag()));
     }
 
     @PostMapping(ApiPaths.Broker.LEASE_RENEW)
