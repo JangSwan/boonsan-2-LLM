@@ -1004,16 +1004,21 @@ EA 시퀀스의 메시지는 한국어 설명으로 되어 있다. 아래 표의
 - EA는 런타임 뷰의 화살표가 닿는 곳마다 그 메시지를 받는 클래스를 둔다. 런타임 부품은 같은 이름의 클래스가 받고(예: Worker → Lease Manager의 pull은 `LeaseManager`, Front Gateway → Admission Controller의 enqueue는 `AdmissionController`), 차일드 다이어그램이 없는 컴포넌트는 Module View에서 책임별로 나눈 클래스가 받는다(예: Web UI → Front Gateway의 질문은 `QuestionController`, Web UI → Model Manager의 교체 요청은 `ModelSwapController`, Web UI → Monitoring은 `AlertService`·`MetricsCollector`).
 - 코드에서는 앱이 달라 HTTP로 부르므로, 받는 클래스의 역할에 따라 HTTP를 받는 곳을 정한다.
   - 받는 클래스가 입구 역할이면(EA 이름이 `~Controller`: `AdmissionController`, `QuestionController`, `ModelSwapController`) 그 클래스가 HTTP를 직접 받는다.
-  - 받는 클래스가 업무 로직이면(`LeaseManager`, `HealthDetector`, `NoticeHandler`, `AlertService` 등) 로직에 HTTP를 섞지 않도록 앞에 얇은 입구 `XxxController`를 두고 위임만 한다. 업무 판단이 없는 HTTP 연결부라 EA에는 그리지 않는다.
+  - 받는 클래스가 업무 로직이면(`LeaseManager`, `HealthDetector`, `NoticeHandler`, `AlertService` 등) 로직에 HTTP를 섞지 않도록 앞에 얇은 입구 `XxxController`를 둔다. 업무 판단이 없는 HTTP 연결부라 EA에는 그리지 않는다.
+  - 얇은 입구가 하는 일은 입력값 확인, 요청·응답 DTO 변환, 대상 클래스 호출뿐이다. 조회용 입구는 여러 클래스의 값을 읽어 한 응답으로 모으기도 한다. 무엇을 허용·거절·선택할지 같은 업무 판단은 하지 않고, 전부 EA의 control 클래스에 있다.
   - 그래서 HTTP 매핑(`@PostMapping` 등)은 이름이 `Controller`로 끝나는 클래스에만 있고, 업무 로직 클래스에는 없다. 예외: `BudgetController`는 런타임 부품 이름을 그대로 쓴 로직 클래스이며 HTTP를 받지 않는다(`CLAUDE.md` 4절).
-- 코드에서 추가한 얇은 입구와 위임 대상:
-  - front-gateway: `StreamController` → StreamRelay (토큰 수신, 실패 통지)
-  - broker: `LeaseController` → LeaseManager, `QueueMetricsController` → SharedQueue, `ReplicationController` → BrokerReplica
-  - worker: `WorkerController` → WorkerAgent(인출 중지), EngineScheduler(지표)
-  - membership: `HeartbeatController` → HealthDetector, `NoticeController` → NoticeHandler(회수 통지), Replenisher(기동 완료)
-  - model-manager: `ModelConfigController` → ModelConfig, ModelStorePort, QualityGate
-  - monitoring: `AlertController` → AlertService, `MetricsController` → MetricsCollector, `QualitySampleController` → SampleForwarder
-- 얇은 입구는 대상 클래스와 같은 패키지에 두고(대상이 여럿이면 Port 목록의 첫 대상 패키지), 위임만 하며 업무 규칙을 넣지 않는다. boundary 클래스를 직접 참조하지 않는 것은 ArchUnit으로 검사한다(`CLAUDE.md` 8절).
+- 코드에서 추가한 얇은 입구와 호출 대상:
+  - 대상 하나에 넘김
+    - front-gateway: `StreamController` → StreamRelay (토큰 수신, 실패 통지)
+    - broker: `LeaseController` → LeaseManager, `ReplicationController` → BrokerReplica
+    - membership: `HeartbeatController` → HealthDetector, `NoticeController` → NoticeHandler(회수 통지), Replenisher(기동 완료)
+    - monitoring: `AlertController` → AlertService, `MetricsController` → MetricsCollector, `QualitySampleController` → SampleForwarder
+  - 여러 클래스의 값을 모아 응답 (조회 전용)
+    - broker: `QueueMetricsController` → SharedQueue(큐 길이), QuarantineQueue(격리 수), LeaseLimiter(실행 중 수, 상한)
+    - worker: `WorkerController`의 지표 조회 → EngineScheduler, WorkerAgent. 인출 중지·기동 신호는 WorkerAgent 하나에 넘긴다
+  - 두 클래스를 차례로 호출
+    - model-manager: `ModelConfigController`의 가중치 적재 → `ModelConfig.stageOf()`로 단계 이름을 단계 객체로 바꾸고 `ModelStorePort.loadWeights()`로 읽은 뒤 크기를 GB로 바꿔 응답. 나머지 주소는 ModelConfig 또는 QualityGate 하나에 넘긴다
+- 얇은 입구는 대상 클래스와 같은 패키지에 두고(대상이 여럿이면 Port 목록의 첫 대상 패키지), 업무 규칙을 넣지 않는다. boundary 클래스를 직접 참조하지 않는 것은 ArchUnit으로 검사한다(`CLAUDE.md` 8절).
 - 앱마다 Spring Boot 시작점 `XxxApplication`(예: `BrokerApplication`)이 모듈 기본 패키지에 하나씩 있다. 기술적으로 필요한 클래스라 EA에 그리지 않는다.
 - fake-aws의 `FakeAwsController`는 외부 액터 AWS(스팟)를 흉내 내는 시연 앱의 입구라 EA 밖이다(`CLAUDE.md` 2절 "가짜 AWS").
 
