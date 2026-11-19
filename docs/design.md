@@ -1001,8 +1001,12 @@ EA 시퀀스의 메시지는 한국어 설명으로 되어 있다. 아래 표의
 - 대가: DTO 하나를 바꾸면 그 DTO를 쓰는 모든 앱이 함께 바뀐다. 그래서 `common`에는 로직을 두지 않고, DTO나 API 경로를 바꾸기 전에 팀에 알린다(`CLAUDE.md` 7절). JSON 왕복은 `DtoJsonContractTest`로 확인한다.
 
 **얇은 REST 입구와 앱 시작점 (`CLAUDE.md` 3절 Port 목록, 4절)**
-- EA에 그린 입구 클래스는 설계상 책임이 있는 것뿐이다: `QuestionController`, `AdmissionController`, `ModelSwapController`. 이들은 시퀀스에 lifeline으로 나오고, EA에 그려진 호출을 그대로 한다(예: QuestionController → RequestIdIssuer·VersionTagger·QueueBrokerClient·StreamRelay).
-- EA는 컴포넌트 사이 호출을 "Worker → StreamRelay"처럼 바로 부르는 것으로 그린다. 코드에서는 앱이 달라 HTTP로만 부르므로, 받는 쪽 앱에 HTTP 요청을 받아 EA 클래스 하나에 넘기기만 하는 얇은 입구를 둔다. 책임이 없는 배관이라 EA에는 그리지 않는다.
+- EA는 런타임 뷰의 화살표가 닿는 곳마다 그 메시지를 받는 클래스를 둔다. 런타임 부품은 같은 이름의 클래스가 받고(예: Worker → Lease Manager의 pull은 `LeaseManager`, Front Gateway → Admission Controller의 enqueue는 `AdmissionController`), 차일드 다이어그램이 없는 컴포넌트는 Module View에서 책임별로 나눈 클래스가 받는다(예: Web UI → Front Gateway의 질문은 `QuestionController`, Web UI → Model Manager의 교체 요청은 `ModelSwapController`, Web UI → Monitoring은 `AlertService`·`MetricsCollector`).
+- 코드에서는 앱이 달라 HTTP로 부르므로, 받는 클래스의 역할에 따라 HTTP를 받는 곳을 정한다.
+  - 받는 클래스가 입구 역할이면(EA 이름이 `~Controller`: `AdmissionController`, `QuestionController`, `ModelSwapController`) 그 클래스가 HTTP를 직접 받는다.
+  - 받는 클래스가 업무 로직이면(`LeaseManager`, `HealthDetector`, `NoticeHandler`, `AlertService` 등) 로직에 HTTP를 섞지 않도록 앞에 얇은 입구 `XxxController`를 두고 위임만 한다. 업무 판단이 없는 HTTP 연결부라 EA에는 그리지 않는다.
+  - 그래서 HTTP 매핑(`@PostMapping` 등)은 이름이 `Controller`로 끝나는 클래스에만 있고, 업무 로직 클래스에는 없다. 예외: `BudgetController`는 런타임 부품 이름을 그대로 쓴 로직 클래스이며 HTTP를 받지 않는다(`CLAUDE.md` 4절).
+- 코드에서 추가한 얇은 입구와 위임 대상:
   - front-gateway: `StreamController` → StreamRelay (토큰 수신, 실패 통지)
   - broker: `LeaseController` → LeaseManager, `QueueMetricsController` → SharedQueue, `ReplicationController` → BrokerReplica
   - worker: `WorkerController` → WorkerAgent(인출 중지), EngineScheduler(지표)
