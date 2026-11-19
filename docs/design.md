@@ -953,6 +953,17 @@ EA 시퀀스의 메시지는 한국어 설명으로 되어 있다. 아래 표의
 
 아래는 EA 다이어그램에 클래스·오퍼레이션으로 그려져 있지 않지만, 구현에 필요해서 정한 것이다. 새 업무 클래스를 만들지 않고 EA에 있는 클래스 안에 넣는다.
 
+**EA를 고칠지, 이 절에 기록할지**
+- 구현하다 EA와 다른 점이 생기면 아키텍처에 영향이 있는지로 나눈다.
+  - EA를 고친다: 컴포넌트 사이에 새 호출이 생길 때, EA 클래스에 새 책임이나 새 오퍼레이션이 생길 때, 전략(C2·T3·U1·R3)의 동작이 바뀔 때. EA를 먼저 고치고 이 문서의 2절과 머리말 수정 기록을 맞춘다.
+  - EA는 두고 이 절에 기록한다: 이미 있는 호출을 HTTP로 구현하는 방법(얇은 입구, DTO), EA에 이미 있는 오퍼레이션·속성을 읽어 모으는 조회, 시연·관찰용으로 더 보내는 값.
+- 사례
+  - EA를 고친 것: sd6 마지막 워커 드레인 판단용 오퍼레이션 `SharedQueue.countMatching`, `LeaseManager.remainingFor`, `CreditManager.remainingForVersion` (4차 수정)
+  - 이 절에 기록한 것: common DTO, 얇은 REST 입구, 지표 조회 항목
+- 지표 조회 항목: 런타임 화살표 라벨은 대표 항목만 적는다("큐 길이 수집", "세션 · GPU · TTFT 수집"). 코드의 수집 응답은 운영자 화면에서 4대분 상한, 격리, 교체 진행을 보이려고 EA에 이미 있는 값을 더 담는다. 새 호출이나 오퍼레이션이 아니라서 EA는 그대로 둔다.
+  - Queue Broker: 큐 길이(`SharedQueue.length`)와 함께 격리 수(`QuarantineQueue.list`), 실행 중 lease 수와 상한(`LeaseLimiter.activeLeases`, `concurrencyCap`)
+  - Worker: 세션·GPU·TTFT(`EngineScheduler`)와 함께 버전 태그(`WorkerAgent`)
+
 **브로커 쿼럼 승격 (sd5, `CLAUDE.md` 6절 규칙 1~5)**
 - 주 브로커 쪽 규칙(1~3: 복제 확인 후 커밋, 복제본이 끊기면 락을 쥔 동안만 혼자 커밋, 둘 다 안 되면 쓰기 정지)은 `Replicator` 안에 넣는다.
 - 복제본 쪽 규칙(4: X초 동안 연락이 없고 락을 얻으면 승격, epoch + 1)은 `BrokerReplica.detectPrimaryLoss()`와 `promote()` 안에 넣는다.
