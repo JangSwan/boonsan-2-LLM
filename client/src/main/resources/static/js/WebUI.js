@@ -18,7 +18,9 @@ class WebUI {
     });
     this.stopButton.addEventListener('click', () => this.finish('중단했습니다.'));
     root.querySelector('#sample-long').addEventListener('click', () => {
-      this.input.value = '긴 문서 요약을 부탁합니다. '.repeat(1100);
+      // 보고서의 긴 입력(약 4,000토큰). 실제 Llama 토크나이저는 한글 한 글자를 대략 1토큰 안팎으로 세므로
+      // 약 4,500자로 둔다. real 엔진의 최대 길이(max-model-len 8192)를 넘지 않는다.
+      this.input.value = '긴 문서 요약을 부탁합니다. '.repeat(300);
       this.updateCount();
     });
     root.querySelector('#sample-crash').addEventListener('click', () => {
@@ -96,8 +98,11 @@ class WebUI {
   }
 
   updateCount() {
-    const chars = [...this.input.value].length;
-    this.form.querySelector('#count').textContent = `${chars.toLocaleString()}자 · 약 ${Math.ceil(chars / 4).toLocaleString()}토큰`;
+    const chars = [...this.input.value];
+    // 대략의 토큰 수: 한글은 한 글자를 1토큰, 나머지(영문·숫자·공백)는 4글자를 1토큰으로 센다 (실제 Llama 토크나이저 근사)
+    const hangul = chars.filter((c) => /[\uAC00-\uD7A3\u3131-\u318E]/.test(c)).length;
+    const tokens = hangul + Math.ceil((chars.length - hangul) / 4);
+    this.form.querySelector('#count').textContent = `${chars.length.toLocaleString()}자 · 약 ${tokens.toLocaleString()}토큰`;
   }
 
   ms(at) {
