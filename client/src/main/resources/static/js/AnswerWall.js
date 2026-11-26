@@ -140,21 +140,37 @@ class AnswerWall {
     this.firsts = [];
     this.running = false;
     this.startButton.addEventListener('click', () => this.start());
+    if (this.baseUrls().length === 1) {
+      // 클라우드 주소에서는 6개까지만 동시에 흐른다. 12 선택지를 감추고 안내 문구를 바꾼다
+      const tiles = root.querySelector('#tiles');
+      [...tiles.options].forEach((o) => { if (Number(o.value) > 6) o.remove(); });
+      tiles.value = '6';
+      root.querySelector('.wall-note').textContent =
+        '브라우저는 같은 주소로 동시에 6개까지만 연결하므로 이 주소에서는 타일 6개까지 보여 준다. 더 큰 부하는 부하 생성기(scripts/loadtest)로 함께 건다. PC를 한 대 더 쓰면 6개를 더 볼 수 있다.';
+    }
     this.stopButton.addEventListener('click', () => this.stop());
   }
 
-  /** 같은 주소로는 브라우저가 6개까지만 동시에 연결하므로 localhost와 127.0.0.1로 나눈다. */
+  /**
+   * 같은 주소로는 브라우저가 6개까지만 동시에 연결하므로 로컬에서는 localhost와 127.0.0.1로 나눈다.
+   * 클라우드 서버처럼 다른 주소로 열었을 때는 나눌 다른 이름이 없으므로 주소 하나만 쓴다 (타일 최대 6개).
+   */
   baseUrls() {
     const base = new URL(window.LLM_CONFIG.frontGatewayUrl);
     const alt = new URL(base);
     if (base.hostname === 'localhost') alt.hostname = '127.0.0.1';
     else if (base.hostname === '127.0.0.1') alt.hostname = 'localhost';
+    else return [base.origin];
     return [base.origin, alt.origin];
   }
 
+  maxTiles() {
+    return this.baseUrls().length * 6;
+  }
+
   start() {
-    const n = Number(this.root.querySelector('#tiles').value);
     const urls = this.baseUrls();
+    const n = Math.min(Number(this.root.querySelector('#tiles').value) || this.maxTiles(), this.maxTiles());
     this.grid.innerHTML = '';
     this.counts = { running: 0, done: 0, failed: 0 };
     this.firsts = [];
@@ -162,7 +178,7 @@ class AnswerWall {
     this.running = true;
     this.startButton.hidden = true;
     this.stopButton.hidden = false;
-    this.tiles = Array.from({ length: n }, (_, i) => new AnswerTile(this, i, urls[i < 6 ? 0 : 1]));
+    this.tiles = Array.from({ length: n }, (_, i) => new AnswerTile(this, i, urls[Math.min(Math.floor(i / 6), urls.length - 1)]));
     this.tiles.forEach((t, i) => {
       this.grid.appendChild(t.el);
       setTimeout(() => t.run(), i * 150);
@@ -206,7 +222,12 @@ window.addEventListener('DOMContentLoaded', () => {
   const wall = new AnswerWall(document);
   // 시연용 바로 시작: wall.html?start&tiles=12&long
   const p = new URLSearchParams(location.search);
-  if (p.has('tiles')) document.querySelector('#tiles').value = p.get('tiles');
+  if (p.has('tiles')) {
+    const tiles = document.querySelector('#tiles');
+    tiles.value = p.get('tiles');
+    // 이 주소에서 고를 수 없는 개수(예: 클라우드 주소의 12)면 고를 수 있는 가장 큰 값으로
+    if (!tiles.value) tiles.value = tiles.options[tiles.options.length - 1].value;
+  }
   if (p.has('long')) wall.mixLong.checked = true;
   if (p.has('start')) wall.start();
 });
