@@ -37,6 +37,10 @@ docker compose up --build  # 전체 실행 (mock 프로필)
 - 명령줄 질문: `curl -N -X POST localhost:8080/api/front-gateway/questions -H 'Content-Type: application/json' -d '{"text":"안녕하세요"}'`
 - Docker 없이 실행: `./gradlew build -x test && scripts/local-run.sh start` (같은 포트, `scripts/local-run.sh stop worker-5`로 장애 시연)
 
+### 클라우드 상시 서버
+
+나와 팀원이 브라우저로 언제든 접속할 수 있게 CPU 서버 1대(평소 중지, 쓸 때만 시작)에 앱을 올리는 방법은 [docs/cloud-setup.md](docs/cloud-setup.md)에 있다. `docker-compose.cloud.yml`, `scripts/cloud/`를 쓴다. GPU가 없을 때는 mock worker 2대로 돌고, GPU 서버를 켜면 `scripts/cloud/mode.sh real`로 real worker를 붙인다.
+
 ## 시나리오 (sd1 ~ sd6)
 
 전체를 띄운 뒤 `scripts/scenarios/run-all.sh`(Docker 없이 띄웠으면 `MODE=local`)로 자동 확인한다. CI의 `scenarios` job이 docker compose 위에서 같은 스크립트를 돌린다.
@@ -108,7 +112,7 @@ scripts/real/build-jars.sh             # CPU 서버: 전체
 
 ### 3. 띄우기
 
-CPU 서버를 먼저 띄운다.
+CPU 서버를 먼저 띄운다. 상시 서버([docs/cloud-setup.md](docs/cloud-setup.md))를 쓰면 아래 CPU 서버 명령 대신 `scripts/cloud/mode.sh real`을 쓴다.
 
 ```bash
 # CPU 서버

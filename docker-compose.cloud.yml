@@ -1,0 +1,94 @@
+# 클라우드 상시 서버(CPU 서버 1대): 평소에는 중지해 두고, 켜면 앱이 자동으로 다시 뜬다. docker-compose.yml 위에 덮어 쓴다.
+#   scripts/cloud/up.sh                  # = docker compose -f docker-compose.yml -f docker-compose.cloud.yml --env-file .env up -d
+#   scripts/cloud/mode.sh mock|real      # mock worker 2대 ↔ GPU 서버의 real worker
+#   scripts/cloud/size.sh light|measure  # t3.medium(4GB) ↔ m7i.2xlarge(측정 날) 메모리 상한
+# 안내: docs/cloud-setup.md. 이 파일은 real-control 덮어쓰기를 대신한다 (같이 쓰지 않는다).
+#
+# 메모리: 로컬에서 잰 앱별 RSS(유휴 → 부하 중 최대, 힙 상한 256MB)는 client 136, fake-aws 147, model-manager 147→162,
+# monitoring 155→161, worker 160→172, broker-replica 172→190, membership 190→208, front-gateway 153→297,
+# broker-primary 197→288MB였다. 가벼운 구성(앱 11개 + redis) 합계는 부하 중 약 2.2GB라 4GB 서버에 들어간다.
+# 컨테이너 상한(MEM_*)의 60%를 힙으로 쓴다 (docker/Dockerfile의 MaxRAMPercentage=60).
+
+x-cloud: &cloud
+  restart: unless-stopped
+
+x-cloud-env: &cloud-env
+  # 클라우드 서버는 켤 때마다 공인 IP가 바뀌므로 패턴으로 연다. 접근은 보안 그룹(팀원 IP)으로 막는다
+  CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:8140,http://*:8140}"
+  # mock: 이 서버의 worker-1·2 / real: GPU 서버 주소 (scripts/cloud/mode.sh가 .env를 바꾼다)
+  WORKER_URLS: "${WORKER_URLS:-worker-1=http://worker-1:8091,worker-2=http://worker-2:8092}"
+  # Dockerfile 기본값에 작은 서버용 SerialGC를 더한다 (keep-alive 설정은 그대로 둔다)
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=60 -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xss512k -Djdk.httpclient.keepalive.timeout=3"
+
+services:
+  redis:
+    <<: *cloud
+  broker-replica:
+    <<: *cloud
+    mem_limit: ${MEM_LARGE:-448m}
+    environment:
+      <<: *cloud-env
+      # 동시 실행 상한. mock: (worker 2대 - 1) × 8 = 8 (R3: 1대분) / real: .env REAL_CONCURRENCY_CAP
+      LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-8}
+  broker-primary:
+    <<: *cloud
+    mem_limit: ${MEM_LARGE:-448m}
+    environment:
+      <<: *cloud-env
+      LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-8}
+  membership-1:
+    <<: *cloud
+    mem_limit: ${MEM_MEDIUM:-320m}
+    environment: *cloud-env
+  membership-2:
+    <<: *cloud
+    mem_limit: ${MEM_MEDIUM:-320m}
+    environment: *cloud-env
+  model-manager:
+    <<: *cloud
+    mem_limit: ${MEM_SMALL:-256m}
+    environment:
+      <<: *cloud-env
+      # mock: U0 / real: vLLM을 FP8(+ KV FP8)로 띄우므로 FP8 (워커 크레딧의 KV 용량이 이 단계 값을 쓴다)
+      LLM_MODELMANAGER_ACTIVESTAGE: ${MODEL_ACTIVE_STAGE:-U0}
+  monitoring:
+    <<: *cloud
+    mem_limit: ${MEM_SMALL:-256m}
+    environment: *cloud-env
+  fake-aws:
+    <<: *cloud
+    mem_limit: ${MEM_SMALL:-256m}
+    environment:
+      <<: *cloud-env
+      # 상시 서버에는 예비 워커가 없다. 재보충 시연을 할 때만 예비 서버 주소를 넣는다
+      SPARE_INSTANCE_URLS: ${SPARE_INSTANCE_URLS:-http://worker-spare:8096}
+  front-gateway:
+    <<: *cloud
+    mem_limit: ${MEM_LARGE:-448m}
+    environment: *cloud-env
+  client:
+    <<: *cloud
+    mem_limit: ${MEM_SMALL:-256m}
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=60 -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xss512k"
+
+  # mock worker 2대: .env의 COMPOSE_PROFILES=mock-workers일 때만 뜬다 (scripts/cloud/mode.sh mock)
+  worker-1:
+    <<: *cloud
+    profiles: ["mock-workers"]
+    mem_limit: ${MEM_MEDIUM:-320m}
+    environment: *cloud-env
+  worker-2:
+    <<: *cloud
+    profiles: ["mock-workers"]
+    mem_limit: ${MEM_MEDIUM:-320m}
+    environment: *cloud-env
+  # 상시 서버에서는 띄우지 않는다 (5대 mock 시연은 로컬 docker compose로)
+  worker-3:
+    profiles: ["mock-full"]
+  worker-4:
+    profiles: ["mock-full"]
+  worker-5:
+    profiles: ["mock-full"]
+  worker-spare:
+    profiles: ["mock-full"]
