@@ -22,7 +22,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * real 프로필의 추론 엔진: vLLM(OpenAI 호환 /v1/completions, stream: true).
+ * real 프로필의 추론 엔진: vLLM(OpenAI 호환 /v1/chat/completions, stream: true).
+ * Instruct 모델이 질문으로 알아듣도록 본문을 user 메시지로 보내 엔진이 채팅 템플릿을 적용하게 한다.
  * plan.prompts에 처음 나온 요청은 그 본문으로 스트림을 열고, 이후 execute()가 불릴 때마다 지난 호출 이후 받은 토큰을
  * 같은 StepResult 모양으로 돌려준다. 첫 토큰이 온 요청은 prefillDoneIds, 스트림이 끝난 요청은 finishedIds에 넣는다.
  * 스텝 구성은 vLLM의 chunked prefill이 하고, B는 vLLM 시작 설정 max_num_batched_tokens로 넣는다 (CLAUDE.md 2절).
@@ -35,7 +36,9 @@ public class VllmEngineAdapter implements InferenceEnginePort {
 
     private final WorkerProperties.Engine config;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+    // vLLM(uvicorn)은 h2c 업그레이드를 받지 않으므로 처음부터 HTTP/1.1로 연결한다
+    private final HttpClient httpClient = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(2)).build();
     private final Map<String, Stream> streams = new ConcurrentHashMap<>();
 
     public VllmEngineAdapter(WorkerProperties properties, ObjectMapper objectMapper) {
@@ -121,9 +124,10 @@ public class VllmEngineAdapter implements InferenceEnginePort {
             return;
         }
         try {
-            JsonNode text = objectMapper.readTree(data).path("choices").path(0).path("text");
-            if (!text.isMissingNode() && !text.asText().isEmpty()) {
-                stream.tokens.add(text.asText());
+            // 첫 조각은 role만 담고 content가 비어 있으므로 건너뛴다
+            JsonNode content = objectMapper.readTree(data).path("choices").path(0).path("delta").path("content");
+            if (content.isTextual() && !content.asText().isEmpty()) {
+                stream.tokens.add(content.asText());
             }
         } catch (Exception e) {
             stream.error = e;
@@ -133,8 +137,10 @@ public class VllmEngineAdapter implements InferenceEnginePort {
     private HttpRequest request(String prompt, int maxTokens, boolean stream) {
         try {
             String body = objectMapper.writeValueAsString(Map.of(
-                    "model", config.vllmModel(), "prompt", prompt, "max_tokens", maxTokens, "stream", stream));
-            return HttpRequest.newBuilder(URI.create(config.vllmUrl() + "/v1/completions"))
+                    "model", config.vllmModel(),
+                    "messages", List.of(Map.of("role", "user", "content", prompt)),
+                    "max_tokens", maxTokens, "stream", stream));
+            return HttpRequest.newBuilder(URI.create(config.vllmUrl() + "/v1/chat/completions"))
                     .timeout(Duration.ofMinutes(5))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
