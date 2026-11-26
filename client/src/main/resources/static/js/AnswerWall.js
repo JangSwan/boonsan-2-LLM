@@ -140,37 +140,61 @@ class AnswerWall {
     this.firsts = [];
     this.running = false;
     this.startButton.addEventListener('click', () => this.start());
-    if (this.baseUrls().length === 1) {
-      // 클라우드 주소에서는 6개까지만 동시에 흐른다. 12 선택지를 감추고 안내 문구를 바꾼다
-      const tiles = root.querySelector('#tiles');
-      [...tiles.options].forEach((o) => { if (Number(o.value) > 6) o.remove(); });
-      tiles.value = '6';
-      root.querySelector('.wall-note').textContent =
-        '브라우저는 같은 주소로 동시에 6개까지만 연결하므로 이 주소에서는 타일 6개까지 보여 준다. 더 큰 부하는 부하 생성기(scripts/loadtest)로 함께 건다. PC를 한 대 더 쓰면 6개를 더 볼 수 있다.';
-    }
     this.stopButton.addEventListener('click', () => this.stop());
   }
 
   /**
-   * 같은 주소로는 브라우저가 6개까지만 동시에 연결하므로 로컬에서는 localhost와 127.0.0.1로 나눈다.
-   * 클라우드 서버처럼 다른 주소로 열었을 때는 나눌 다른 이름이 없으므로 주소 하나만 쓴다 (타일 최대 6개).
+   * 같은 주소로는 브라우저가 동시에 6개까지만 연결하므로, 같은 서버를 가리키는 다른 이름으로 나눠 보낸다.
+   * - 로컬: localhost, 127.0.0.1
+   * - 클라우드(공인 IP a.b.c.d): IP 그대로, EC2 공개 DNS(ec2-a-b-c-d.<리전>.compute.amazonaws.com),
+   *   a.b.c.d.nip.io, w2.a.b.c.d.nip.io (nip.io는 이름 속 IP를 그대로 돌려주는 공개 DNS)
+   * 이름이 실제로 닿는지는 start()에서 확인하고, 닿는 이름 수 × 6개까지 타일을 띄운다.
+   * 주소 목록은 ?hosts=이름1,이름2 로 직접 줄 수도 있다.
    */
-  baseUrls() {
+  candidateUrls() {
     const base = new URL(window.LLM_CONFIG.frontGatewayUrl);
-    const alt = new URL(base);
-    if (base.hostname === 'localhost') alt.hostname = '127.0.0.1';
-    else if (base.hostname === '127.0.0.1') alt.hostname = 'localhost';
-    else return [base.origin];
-    return [base.origin, alt.origin];
+    const port = base.port;
+    const make = (host) => `${base.protocol}//${host}${port ? ':' + port : ''}`;
+    const given = new URLSearchParams(location.search).get('hosts');
+    if (given) return given.split(',').map((h) => make(h.trim())).filter(Boolean);
+    const h = base.hostname;
+    if (h === 'localhost' || h === '127.0.0.1') return [make('localhost'), make('127.0.0.1')];
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) {
+      const region = window.LLM_CONFIG.awsRegion || 'ap-northeast-2';
+      return [make(h), make(`ec2-${h.replace(/\./g, '-')}.${region}.compute.amazonaws.com`),
+        make(`${h}.nip.io`), make(`w2.${h}.nip.io`)];
+    }
+    return [base.origin];
   }
 
-  maxTiles() {
-    return this.baseUrls().length * 6;
+  /** 각 이름이 2초 안에 닿는지 확인한다 (no-cors 요청이라 응답 내용은 보지 않고 연결만 본다). */
+  async reachableUrls() {
+    const urls = this.candidateUrls();
+    const ok = await Promise.all(urls.map(async (u) => {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 2000);
+      try {
+        await fetch(u + '/actuator/health', { mode: 'no-cors', signal: ctl.signal, cache: 'no-store' });
+        return true;
+      } catch (_) {
+        return false;
+      } finally {
+        clearTimeout(timer);
+      }
+    }));
+    const reachable = urls.filter((_, i) => ok[i]);
+    return reachable.length ? reachable : [urls[0]];
   }
 
-  start() {
-    const urls = this.baseUrls();
-    const n = Math.min(Number(this.root.querySelector('#tiles').value) || this.maxTiles(), this.maxTiles());
+  async start() {
+    this.startButton.disabled = true;
+    const urls = await this.reachableUrls();
+    this.startButton.disabled = false;
+    const max = urls.length * 6;
+    const n = Math.min(Number(this.root.querySelector('#tiles').value) || max, max);
+    this.root.querySelector('.wall-note').textContent =
+      `브라우저는 같은 주소로 동시에 6개까지만 연결하므로, 같은 서버의 다른 이름 ${urls.length}개(${urls.map((u) => new URL(u).hostname).join(', ')})로 나눠 타일 ${n}개를 띄운다. ` +
+      '더 큰 부하는 부하 생성기(scripts/loadtest)로 함께 건다.';
     this.grid.innerHTML = '';
     this.counts = { running: 0, done: 0, failed: 0 };
     this.firsts = [];
@@ -178,7 +202,7 @@ class AnswerWall {
     this.running = true;
     this.startButton.hidden = true;
     this.stopButton.hidden = false;
-    this.tiles = Array.from({ length: n }, (_, i) => new AnswerTile(this, i, urls[Math.min(Math.floor(i / 6), urls.length - 1)]));
+    this.tiles = Array.from({ length: n }, (_, i) => new AnswerTile(this, i, urls[Math.floor(i / 6) % urls.length]));
     this.tiles.forEach((t, i) => {
       this.grid.appendChild(t.el);
       setTimeout(() => t.run(), i * 150);
@@ -220,12 +244,12 @@ class AnswerWall {
 
 window.addEventListener('DOMContentLoaded', () => {
   const wall = new AnswerWall(document);
-  // 시연용 바로 시작: wall.html?start&tiles=12&long
+  // 시연용 바로 시작: wall.html?start&tiles=24&long (주소 직접 지정: &hosts=이름1,이름2)
   const p = new URLSearchParams(location.search);
   if (p.has('tiles')) {
+    // 닿는 이름이 모자라면 start()가 닿는 이름 수 × 6개로 줄인다
     const tiles = document.querySelector('#tiles');
     tiles.value = p.get('tiles');
-    // 이 주소에서 고를 수 없는 개수(예: 클라우드 주소의 12)면 고를 수 있는 가장 큰 값으로
     if (!tiles.value) tiles.value = tiles.options[tiles.options.length - 1].value;
   }
   if (p.has('long')) wall.mixLong.checked = true;

@@ -21,7 +21,7 @@
 <!-- 시연 도구: 여러 질문을 동시에 보내 각자 다른 답이 흘러나오는 모습을 보여 준다. EA 화면이 아니며 업무 판단을 하지 않는다. -->
 <div class="wall-bar">
   <label>타일 <select id="tiles">
-    <option>6</option><option selected>12</option>
+    <option>6</option><option>12</option><option>18</option><option selected>24</option>
   </select></label>
   <label><input type="checkbox" id="mix-long"> 긴 입력 20% 섞기</label>
   <button type="button" id="start" class="primary">시작</button>
@@ -33,7 +33,7 @@
   <span class="wall-stat">첫 토큰 평균 <b id="s-avg">–</b></span>
   <span class="wall-stat">최대 <b id="s-max">–</b></span>
 </div>
-<p class="wall-note muted">브라우저는 같은 주소로 동시에 6개까지만 연결하므로, 타일 12개는 localhost와 127.0.0.1로 나눠 보낸다. 더 큰 부하는 부하 생성기(scripts/loadtest)로 함께 건다.</p>
+<p class="wall-note muted">브라우저는 같은 주소로 동시에 6개까지만 연결하므로, 같은 서버의 다른 이름으로 나눠 보낸다(시작할 때 닿는 이름을 확인). 더 큰 부하는 부하 생성기(scripts/loadtest)로 함께 건다.</p>
 <div id="wall" class="wall"></div>
 </body>
 </html>
