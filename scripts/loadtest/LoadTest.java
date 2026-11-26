@@ -53,6 +53,8 @@ public class LoadTest {
     static final long QAS2_P95_LIMIT_MS = 3_000;
 
     static final Pattern POSITION = Pattern.compile("\"position\"\\s*:\\s*(\\d+)");
+    static final Pattern TOKEN = Pattern.compile("\"token\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
+    static final Pattern TAG = Pattern.compile("\\[Q(\\d+)\\]");
 
     enum Kind { SHORT, LONG_CHAT, LONG_DOC;
         boolean isLong() { return this != SHORT; }
@@ -72,6 +74,11 @@ public class LoadTest {
         long doneMs = -1;
         boolean failed;
         String error = "";
+        /** --check: 답변 맨 앞에 쓰라고 한 이 요청의 표식과 덧셈 문제의 정답 */
+        String tag;
+        int expectedSum = -1;
+        /** --check 또는 --answers일 때만 받은 토큰을 모은다 */
+        StringBuilder answer;
 
         Result(int index, Kind kind, int inputTokens) {
             this.index = index;
@@ -111,6 +118,8 @@ public class LoadTest {
     final int shortTokensMin;
     final int shortTokensMax;
     final int longTokens;
+    final boolean check;
+    final String answersFile;
 
     final HttpClient client;
     final ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor();
@@ -138,6 +147,8 @@ public class LoadTest {
         shortTokensMin = Integer.parseInt(a.getOrDefault("short-tokens-min", "20"));
         shortTokensMax = Integer.parseInt(a.getOrDefault("short-tokens-max", "500"));
         longTokens = Integer.parseInt(a.getOrDefault("long-tokens", "4000"));
+        check = a.containsKey("check");
+        answersFile = a.get("answers");
         client = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10))
@@ -180,8 +191,9 @@ public class LoadTest {
         for (int i = 0; i < requests; i++) {
             Kind kind = pickKind(rnd);
             int tokens = kind.isLong() ? longTokens : between(rnd, shortTokensMin, shortTokensMax);
-            planned.add(new Result(i, kind, tokens));
-            bodies.add(json(text(kind, tokens, rnd)));
+            Result r = new Result(i, kind, tokens);
+            planned.add(r);
+            bodies.add(json(text(r, rnd)));
         }
         CountDownLatch gate = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(requests);
@@ -228,7 +240,7 @@ public class LoadTest {
                             Kind kind = pickKind(rnd);
                             int tokens = kind.isLong() ? longTokens : between(rnd, shortTokensMin, shortTokensMax);
                             Result r = new Result(seq.getAndIncrement(), kind, tokens);
-                            send(r, json(text(kind, tokens, rnd)));
+                            send(r, json(text(r, rnd)));
                         }
                     } finally {
                         done.countDown();
@@ -315,6 +327,10 @@ public class LoadTest {
                     }
                     case "token" -> {
                         if (r.firstTokenMs < 0) r.firstTokenMs = t;
+                        if (r.answer != null) {
+                            Matcher tm = TOKEN.matcher(data);
+                            if (tm.find()) r.answer.append(unescape(tm.group(1)));
+                        }
                         if (data.contains("\"isLast\":true")) {
                             r.doneMs = t;
                             return;
@@ -404,6 +420,7 @@ public class LoadTest {
         reasons.forEach((k, v) -> System.out.printf("  - %s: %d건%n", k, v));
         if (maxOkPos > 0) System.out.printf("30초 안에 첫 토큰을 받은 짧은 질문의 최대 초기 순번: %d%n", maxOkPos);
         if (minMissPos != Integer.MAX_VALUE) System.out.printf("30초를 넘긴 짧은 질문의 최소 초기 순번: %d%n", minMissPos);
+        reportAnswers(rs);
         System.out.println("판정: " + (pass ? "PASS" : "FAIL"));
         return pass;
     }
@@ -433,6 +450,7 @@ public class LoadTest {
         long within = ttft.stream().filter(v -> v <= QAS2_P95_LIMIT_MS).count();
         System.out.printf("3초 이내 첫 토큰 비율: %.1f%% (기준 95%% 이상), 첫 토큰 없음 %d건%n",
                 rs.isEmpty() ? 0 : within * 100.0 / rs.size(), missing);
+        reportAnswers(all);
         System.out.println("판정: " + (pass ? "PASS" : "FAIL"));
         return pass;
     }
@@ -442,6 +460,82 @@ public class LoadTest {
         System.out.printf("%s (%d건, 받은 %d건): p50 %s / p95 %s / p99 %s / 최대 %s%n", label, rs.size(), v.size(),
                 fmt(percentile(v, 50)), fmt(percentile(v, 95)), fmt(percentile(v, 99)),
                 fmt(v.isEmpty() ? -1 : Collections.max(v)));
+    }
+
+    /**
+     * --check: 답이 제 요청의 것인지 확인한다. 다른 요청의 표식이 들어 있으면 답이 섞인 것(섞임 0건이어야 한다).
+     * 자기 표식이 없는 것은 모델이 지시를 따르지 않은 것이라 섞임과 따로 센다. --answers: 답을 JSONL로 저장한다.
+     */
+    void reportAnswers(List<Result> rs) throws IOException {
+        List<Result> done = rs.stream().filter(r -> r.answer != null && r.doneMs >= 0).toList();
+        if (check) {
+            int own = 0, foreign = 0, noTag = 0, sumOk = 0;
+            List<Result> mixed = new ArrayList<>();
+            for (Result r : done) {
+                String ans = r.answer.toString();
+                boolean hasOwn = ans.contains(r.tag);
+                boolean hasForeign = false;
+                Matcher m = TAG.matcher(ans);
+                while (m.find()) {
+                    if (Integer.parseInt(m.group(1)) != r.index) hasForeign = true;
+                }
+                if (hasForeign) { foreign++; mixed.add(r); }
+                else if (hasOwn) own++;
+                else noTag++;
+                if (Pattern.compile("(?<!\\d)" + r.expectedSum + "(?!\\d)").matcher(ans).find()) sumOk++;
+            }
+            System.out.println();
+            System.out.printf("답변 확인 (끝까지 받은 %d건): 자기 표식 %d건, 다른 요청 표식(섞임) %d건, 표식 없음(모델이 지시 무시) %d건%n",
+                    done.size(), own, foreign, noTag);
+            System.out.printf("덧셈 정답 포함: %d건 / %d건%n", sumOk, done.size());
+            for (Result r : mixed.subList(0, Math.min(3, mixed.size()))) {
+                System.out.printf("  섞임 의심 #%d %s: %s%n", r.index, r.tag, preview(r.answer.toString()));
+            }
+            System.out.println("판정(섞임): " + (foreign == 0 ? "PASS (다른 요청의 답이 섞이지 않음)" : "FAIL"));
+        }
+        if (!done.isEmpty()) {
+            System.out.println("답변 예시:");
+            for (Result r : done.subList(0, Math.min(3, done.size()))) {
+                System.out.printf("  #%d (%s): %s%n", r.index, r.kind.label(), preview(r.answer.toString()));
+            }
+        }
+        if (answersFile != null) {
+            try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(Path.of(answersFile), StandardCharsets.UTF_8))) {
+                for (Result r : rs) {
+                    if (r.answer == null) continue;
+                    w.printf(Locale.ROOT, "{\"index\":%d,\"kind\":\"%s\",\"tag\":%s,\"expectedSum\":%d,\"firstTokenMs\":%d,\"error\":\"%s\",\"answer\":%s}%n",
+                            r.index, r.kind.label(), r.tag == null ? "null" : quote(r.tag), r.expectedSum, r.firstTokenMs,
+                            r.error, quote(r.answer.toString()));
+                }
+            }
+            System.out.println("답변 기록: " + answersFile);
+        }
+    }
+
+    static String preview(String s) {
+        String one = s.replaceAll("\\s+", " ").trim();
+        return one.length() > 120 ? one.substring(0, 120) + "…" : one;
+    }
+
+    static String unescape(String s) {
+        StringBuilder b = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c != '\\' || i + 1 >= s.length()) { b.append(c); continue; }
+            char n = s.charAt(++i);
+            switch (n) {
+                case 'n' -> b.append('\n');
+                case 't' -> b.append('\t');
+                case 'r' -> b.append('\r');
+                case 'b' -> b.append('\b');
+                case 'f' -> b.append('\f');
+                case 'u' -> {
+                    if (i + 4 < s.length()) { b.append((char) Integer.parseInt(s.substring(i + 1, i + 5), 16)); i += 4; }
+                }
+                default -> b.append(n);
+            }
+        }
+        return b.toString();
     }
 
     void writeCsv(List<Result> rs) throws IOException {
@@ -468,7 +562,10 @@ public class LoadTest {
             + "river mountain garden window market coffee travel weather library museum history science music "
             + "planet energy ocean forest city village bridge harbor train bicycle kitchen recipe festival").split(" ");
 
-    String text(Kind kind, int tokens, Random rnd) {
+    String text(Result r, Random rnd) {
+        Kind kind = r.kind;
+        int tokens = r.inputTokens;
+        if (check || answersFile != null) r.answer = new StringBuilder();
         int chars = tokens * charsPerToken;
         StringBuilder sb = new StringBuilder(chars + 64);
         switch (kind) {
@@ -491,6 +588,15 @@ public class LoadTest {
             case LONG_CHAT -> " Based on the conversation above, answer the last question briefly.";
             case LONG_DOC -> " Summarize the document above in three sentences.";
         });
+        if (check) {
+            // 답이 다른 요청과 섞이지 않았는지 확인할 표식과, 내용이 맞는지 확인할 덧셈 문제를 붙인다
+            int a = between(rnd, 10, 99);
+            int b = between(rnd, 10, 99);
+            r.tag = "[Q" + r.index + "]";
+            r.expectedSum = a + b;
+            sb.append(" Finally, start your reply with the tag ").append(r.tag)
+                    .append(" exactly, then answer this first: what is ").append(a).append(" + ").append(b).append("?");
+        }
         return sb.toString();
     }
 
@@ -542,6 +648,25 @@ public class LoadTest {
         return sb.append("\"}").toString();
     }
 
+    /** 문자열 하나를 JSON 문자열 값으로 (따옴표 포함). 답변 기록에 쓴다. */
+    static String quote(String text) {
+        StringBuilder sb = new StringBuilder(text.length() + 8).append('"');
+        for (char c : text.toCharArray()) {
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+                    else sb.append(c);
+                }
+            }
+        }
+        return sb.append('"').toString();
+    }
+
     static Map<String, String> parseArgs(String[] args) {
         Map<String, String> m = new HashMap<>();
         for (int i = 0; i < args.length; i++) {
@@ -569,6 +694,8 @@ public class LoadTest {
                   --timeout-sec S          요청 하나의 최대 대기 (기본 600)
                   --drain-sec S            steady: 측정이 끝난 뒤 진행 중 요청을 기다리는 최대 시간 (기본 60, 넘으면 에러로 셈)
                   --csv PATH               요청별 기록 저장
+                  --check                  질문마다 표식 [Q번호]와 덧셈 문제를 붙여, 답이 다른 요청과 섞이지 않았는지·내용이 맞는지 확인
+                  --answers PATH           받은 답변 전체를 JSONL로 저장 (질문 번호, 종류, 첫 토큰 시간, 답변)
                   --fail-on-fail           FAIL이면 종료 코드 1
                 """);
     }
