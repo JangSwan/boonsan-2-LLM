@@ -21,7 +21,7 @@ class MockInferenceEngineTest {
         WorkerProperties p = WorkerTestSupport.properties();
         WorkerProperties props = new WorkerProperties(p.instanceId(), false, 8, 1, 1, 1, 1, 1, 1, p.brokerUrls(),
                 p.membershipUrls(), "", "", 1, p.budget(), p.credit(),
-                new WorkerProperties.Engine(20, 0.02, 1.0, 5, 1, 1, 4, "", 0, 0, "", "", 1));
+                new WorkerProperties.Engine(20, 0.02, 1.0, 5, 1, 1, 4, "", 0, 0, "", "", 1, 2));
         MockInferenceEngine timed = new MockInferenceEngine(props, clock);
 
         long ms = timed.stepTimeMs(new StepPlan(List.of("d1", "d2", "d3"), Map.of("p", 1000), 1003, Map.of()));

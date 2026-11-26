@@ -102,4 +102,23 @@ class EngineSchedulerTest {
         assertThat(capacity.freeKvGb()).isEqualTo(5.0);   // 6.0 - 2 × 0.5
         assertThat(capacity.unstartedTokens()).isEqualTo(1200);
     }
+
+    @Test
+    void 엔진이_한_요청만_처리하지_못하면_그_요청만_빼고_다른_요청은_진척을_계속_보고한다() {
+        scheduler.submit(job("bad", 10));
+        scheduler.submit(job("ok", 10));
+        StepPlan plan = scheduler.buildStep();
+
+        scheduler.onStepDone(new com.llmserving.worker.runtime.StepResult(List.of(), List.of("ok"), List.of(),
+                List.of("bad")));
+
+        assertThat(plan.prefillChunks()).containsKeys("bad", "ok");
+        assertThat(scheduler.hasJob("bad")).isFalse();
+        assertThat(scheduler.hasJob("ok")).isTrue();
+        assertThat(engine.listener.events).contains("first:ok").noneMatch(e -> e.endsWith(":bad"));
+        assertThat(scheduler.freeCapacity().freeSlots()).isPositive();  // 엔진은 정상: 계속 작업을 받는다
+        StepPlan next = scheduler.buildStep();
+        assertThat(next.decodeIds()).containsExactly("ok");
+        assertThat(next.prefillChunks()).doesNotContainKey("bad");
+    }
 }

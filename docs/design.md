@@ -1000,6 +1000,8 @@ EA 시퀀스의 메시지는 한국어 설명으로 되어 있다. 아래 표의
 - mock (`MockInferenceEngine`): StepPlan을 그대로 따른다. 스텝 시간(`CLAUDE.md` 가짜 엔진 공식)만큼 지연한 뒤 결과를 돌려준다. 생성 길이는 설정값(요청별 출력 토큰 수 범위)으로 정한다.
 - real (`VllmEngineAdapter`): `plan.prompts`에 처음 나온 요청은 그 본문으로 vLLM(OpenAI 호환 `/v1/completions`, `stream: true`)에 요청을 연다. 이후 `execute()`가 불릴 때마다 지난 호출 이후 받은 토큰을 같은 `StepResult` 모양으로 돌려주고, 첫 토큰이 온 요청을 `prefillDoneIds`, 스트림이 끝난 요청을 `finishedIds`에 넣는다. 스텝 구성은 vLLM의 chunked prefill이 하고, B는 vLLM 시작 설정 `max_num_batched_tokens`로 넣는다.
 - 실패: 엔진이 응답하지 않거나 연결이 끊기면 두 구현 모두 예외를 던진다. 진척 보고가 끊기므로 sd4의 lease 만료, 재시도, 격리 경로가 mock과 real에서 같게 일어난다.
+- 요청 하나만의 실패 (real에서 확인, **EA 반영 필요**): 실제 vLLM은 엔진이 멀쩡한 채 요청 하나만 거절할 수 있다(입력이 `max-model-len`을 넘으면 4xx). 이것을 엔진 장애로 보면 같은 워커의 다른 요청이 모두 사라지고 재시도 횟수를 잃어, 정상 요청까지 격리된다(2026-11-27 실측: 긴 입력 1건으로 정상 요청 약 19건 격리). 그래서 `StepResult`에 `failedIds`를 둔다. 엔진은 그 요청만 `failedIds`로 알리고, `EngineScheduler`는 그 요청만 빼고 진척을 보고하지 않는다. 그 요청은 sd4대로 lease 만료 → 재시도 → 격리되고("그 요청 1건만 실패 처리"), 다른 요청은 계속 생성된다. EA `StepResult`에 속성 `failedIds: List<String>`을 더해야 한다(3차 수정의 `finishedIds`와 같은 성격).
+- 연결 오류 구분 (real): 토큰을 받기 전에 연결이 끊긴 요청은 그 요청만 다시 연다(출력 전이라 멱등, `vllm-open-retries`회). keep-alive 연결을 vLLM이 먼저 닫아 생기는 경쟁이 여기에 해당한다. 다시 열어도 연결되지 않거나 5xx면 엔진 장애로 보고 예외를 던지며, 받던 스트림은 모두 닫아 vLLM이 사라진 요청을 계속 생성하지 않게 한다. 토큰을 받던 중 연결 하나가 끊기면 그 요청만 실패다.
 - 엔진 주소는 OpenAI 호환 API면 어디든 된다(자체 vLLM, 호환 API를 주는 클라우드 서비스). 다만 호스팅 API에서는 `loadWeights`(사다리 단계), KV 용량을 제어할 수 없으므로 생성 확인 용도로만 쓴다.
 
 **common 모듈의 DTO와 API 경로 (`CLAUDE.md` 2절, 3절)**
