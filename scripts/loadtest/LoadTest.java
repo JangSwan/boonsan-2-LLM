@@ -120,6 +120,7 @@ public class LoadTest {
     final int longTokens;
     final boolean check;
     final String answersFile;
+    final boolean showAnswers;
 
     final HttpClient client;
     final ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor();
@@ -149,6 +150,7 @@ public class LoadTest {
         longTokens = Integer.parseInt(a.getOrDefault("long-tokens", "4000"));
         check = a.containsKey("check");
         answersFile = a.get("answers");
+        showAnswers = a.containsKey("show-answers");
         client = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10))
@@ -302,6 +304,11 @@ public class LoadTest {
             active.remove(r);
             inFlight.decrementAndGet();
             results.add(r);
+            if (showAnswers && r.answer != null && r.doneMs >= 0) {
+                // 시연용: 끝난 답을 한 줄씩 바로 보여 준다
+                System.out.printf("  ✓ #%-5d %-9s 첫 토큰 %5.2f초 | %s%n", r.index, r.kind.label(),
+                        r.firstTokenMs / 1000.0, preview(r.answer.toString()));
+            }
         }
     }
 
@@ -565,7 +572,7 @@ public class LoadTest {
     String text(Result r, Random rnd) {
         Kind kind = r.kind;
         int tokens = r.inputTokens;
-        if (check || answersFile != null) r.answer = new StringBuilder();
+        if (check || answersFile != null || showAnswers) r.answer = new StringBuilder();
         int chars = tokens * charsPerToken;
         StringBuilder sb = new StringBuilder(chars + 64);
         switch (kind) {
@@ -696,6 +703,7 @@ public class LoadTest {
                   --csv PATH               요청별 기록 저장
                   --check                  질문마다 표식 [Q번호]와 덧셈 문제를 붙여, 답이 다른 요청과 섞이지 않았는지·내용이 맞는지 확인
                   --answers PATH           받은 답변 전체를 JSONL로 저장 (질문 번호, 종류, 첫 토큰 시간, 답변)
+                  --show-answers           시연용: 답이 끝날 때마다 한 줄씩(번호, 첫 토큰 시간, 답 앞부분) 바로 출력
                   --fail-on-fail           FAIL이면 종료 코드 1
                 """);
     }

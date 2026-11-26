@@ -237,3 +237,22 @@ scripts/cloud/status.sh
 docker compose -f docker-compose.yml -f docker-compose.cloud.yml --env-file .env logs -f front-gateway
 docker compose -f docker-compose.yml -f docker-compose.cloud.yml --env-file .env ps
 ```
+
+
+## 데모에서 부하와 답변을 함께 보여 주기
+
+화면 세 개를 함께 띄운다.
+
+| 화면 | 보여 주는 것 |
+|---|---|
+| 답변 월 `http://<공인IP>:8140/wall.html?start&tiles=24` | 서로 다른 질문의 답이 타일마다 동시에 흐른다 |
+| 운영자 화면 `http://<공인IP>:8140/admin.html` | 부하 생성기까지 합친 실행 중 수, 워커별 세션, 대기열 |
+| 부하 생성기 터미널 (`--check --show-answers`) | 수십~수백 건의 답이 한 줄씩 지나가고, 끝에 PASS와 "섞임 0건" |
+
+- **답변 월 타일 수:** 브라우저는 같은 주소로 동시에 6개까지만 연결한다. 그래서 같은 서버의 다른 이름으로 나눠 보낸다. 쓰는 이름은 공인 IP, EC2 공개 DNS(`ec2-a-b-c-d.ap-northeast-2.compute.amazonaws.com`), `a.b.c.d.nip.io`, `w2.a.b.c.d.nip.io`다. 시작할 때 닿는 이름만 골라 이름 수 × 6개(최대 24개)를 띄운다. 회의장 네트워크가 nip.io를 막으면 12개로 줄어든다. 주소를 직접 주려면 `&hosts=이름1,이름2`를 붙인다.
+- **부하 생성기 (CPU 서버에서):**
+
+```bash
+docker run --rm --network host -v "$PWD":/w -w /w eclipse-temurin:21-jdk \
+  java scripts/loadtest/LoadTest.java --mode steady --concurrency 160 --duration-sec 120 --warmup-sec 20 --check --show-answers
+```
