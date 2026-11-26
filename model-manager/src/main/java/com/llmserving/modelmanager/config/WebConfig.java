@@ -15,7 +15,9 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins(properties.corsOrigins().toArray(String[]::new))
+                // 출처 목록(쉼표 구분)의 각 항목은 정확한 출처나 패턴(예: http://*:8140)이다.
+                // 클라우드 서버는 켤 때마다 공인 IP가 바뀌므로 패턴을 쓸 수 있게 한다 (docs/cloud-setup.md)
+                .allowedOriginPatterns(properties.corsOrigins().toArray(String[]::new))
                 .allowedMethods("GET", "POST", "OPTIONS")
                 .allowedHeaders("*");
     }
