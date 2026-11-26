@@ -1,0 +1,35 @@
+# real 모드: CPU 서버 1대에서 worker를 뺀 나머지를 띄운다. docker-compose.yml 위에 덮어 쓰는 파일이다.
+#   docker compose -f docker-compose.yml -f docker-compose.real-control.yml --env-file .env up -d --build \
+#     redis broker-replica broker-primary membership-1 membership-2 model-manager monitoring fake-aws front-gateway client
+# worker는 GPU 서버에서 docker-compose.real-gpu.yml로 띄운다. 이 파일의 서비스는 mock 프로필 그대로 둔다:
+# 외부 의존 중 real이 필요한 것은 추론 엔진뿐이고(GPU 서버), 재보충은 fake-aws로 시연한다.
+
+x-real-env: &real-env
+  # GPU 서버의 사설 IP로 바꾼다 (.env의 WORKER_URLS). 형식: 워커ID=http://사설IP:포트
+  WORKER_URLS: "${WORKER_URLS:?WORKER_URLS를 .env에 넣으세요}"
+
+services:
+  broker-replica:
+    mem_limit: 1g
+    environment:
+      <<: *real-env
+      # 동시 실행 상한 = (워커 대수 - 1) × 워커당 슬롯 (R3: N+1). 1주차 측정 후 .env로 정한다
+      LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-32}
+  broker-primary:
+    mem_limit: 1g
+    environment:
+      <<: *real-env
+      LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-32}
+  membership-1:
+    environment: *real-env
+  membership-2:
+    environment: *real-env
+  monitoring:
+    environment: *real-env
+  # 실제 측정에서는 예비 워커가 없다. 재보충 시연을 할 때만 예비 GPU 서버 주소를 넣는다
+  fake-aws:
+    environment:
+      SPARE_INSTANCE_URLS: ${SPARE_INSTANCE_URLS:-http://localhost:8096}
+  # 폭주(QAS1) 때 SSE 연결 1,000개를 함께 잡고 있으므로 메모리를 넉넉히 준다
+  front-gateway:
+    mem_limit: 1g
