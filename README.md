@@ -33,6 +33,7 @@ docker compose up --build  # 전체 실행 (mock 프로필)
 ```
 
 - 이용자 화면: http://localhost:8140 , 운영자 화면: http://localhost:8140/admin.html
+- 답변 월(시연 도구): http://localhost:8140/wall.html — 타일 6~12개가 서로 다른 질문을 동시에 보내고 답이 함께 흘러나오는 모습을 보여 준다. `wall.html?start&tiles=12`로 열면 바로 시작한다. 브라우저 연결 제한(주소당 6개) 때문에 화면 하나에 최대 12개이고, 더 큰 부하는 부하 생성기로 함께 건다. EA 화면이 아니라 시연용이다.
 - 명령줄 질문: `curl -N -X POST localhost:8080/api/front-gateway/questions -H 'Content-Type: application/json' -d '{"text":"안녕하세요"}'`
 - Docker 없이 실행: `./gradlew build -x test && scripts/local-run.sh start` (같은 포트, `scripts/local-run.sh stop worker-5`로 장애 시연)
 
