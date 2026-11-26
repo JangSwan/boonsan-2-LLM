@@ -13,19 +13,23 @@ services:
     mem_limit: 1g
     environment:
       <<: *real-env
-      # 동시 실행 상한 = (워커 대수 - 1) × 워커당 슬롯 (R3: N+1). 1주차 측정 후 .env로 정한다
-      LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-32}
+      # 동시 실행 상한. QAS 측정: GPU 대수 × 워커당 슬롯, N+1 장애 시연: (GPU 대수 - 1) × 워커당 슬롯 (.env)
+      LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-100}
   broker-primary:
     mem_limit: 1g
     environment:
       <<: *real-env
-      LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-32}
+      LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-100}
   membership-1:
     environment: *real-env
   membership-2:
     environment: *real-env
   monitoring:
     environment: *real-env
+  # vLLM을 FP8(+ KV FP8)로 띄우므로 처음 활성 단계를 FP8로 둔다. 워커 크레딧의 KV 용량이 이 단계 값을 쓴다
+  model-manager:
+    environment:
+      LLM_MODELMANAGER_ACTIVESTAGE: ${MODEL_ACTIVE_STAGE:-FP8}
   # 실제 측정에서는 예비 워커가 없다. 재보충 시연을 할 때만 예비 GPU 서버 주소를 넣는다
   fake-aws:
     environment:

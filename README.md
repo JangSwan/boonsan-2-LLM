@@ -138,6 +138,16 @@ docker compose -f docker-compose.real-gpu.yml logs vllm | grep -E "KV cache|Maxi
 - CPU 서버의 `BROKER_CONCURRENCY_CAP`: QAS 측정은 GPU 대수 × 슬롯, N+1 장애 시연은 (GPU 대수 - 1) × 슬롯.
 - 값을 바꾸면 `docker compose ... up -d`로 다시 띄운다. 코드는 고치지 않는다.
 
+1주차 측정 결과 (g6.xlarge L4 1대, vLLM 0.34.0, `--max-model-len 8192 --gpu-memory-utilization 0.90`). GPU당 동시 처리는 요청당 평균 약 1,450토큰(짧은 질문 입력 500 + 답변 약 250이 80%, 긴 입력 4,000 + 답변 약 250이 20%)으로 나눈 값이다.
+
+| 설정 | KV 메모리 | KV 토큰 수 | GPU당 동시 처리 |
+|---|---|---|---|
+| BF16 (U0) | 3.67 GiB | 25,600 | 약 17건 |
+| 가중치 FP8 | 10.07 GiB | 77,824 | 약 53건 |
+| 가중치 FP8 + KV FP8 | 10.07 GiB | 143,360 | 약 99건 |
+
+이 결과로 운영 설정을 FP8 + KV FP8, 워커당 슬롯 50(보고서 가정 GPU당 50건), 요청당 KV 0.2GB(10GB ÷ 50), 상한 100(2대)으로 정했다 (`.env.example` 기본값). 두 FP8 설정 모두 한국어 짧은 답변이 BF16과 비슷하게 나왔다(간이 확인).
+
 BF16(U0)·가중치 FP8·FP8 + KV FP8은 `.env`의 `VLLM_EXTRA_ARGS`만 바꿔 잰다 (`""` / `--quantization fp8` / `--quantization fp8 --kv-cache-dtype fp8`).
 
 ### 5. QAS 측정 (CPU 서버에서)

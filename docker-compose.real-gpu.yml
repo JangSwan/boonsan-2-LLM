@@ -20,7 +20,7 @@ services:
       --max-model-len ${VLLM_MAX_MODEL_LEN:-8192}
       --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION:-0.90}
       --max-num-batched-tokens ${WORKER_B_MAX:-2048}
-      --max-num-seqs ${WORKER_MAX_SLOTS:-8}
+      --max-num-seqs ${WORKER_MAX_SLOTS:-50}
       ${VLLM_EXTRA_ARGS:-}
     # 호스트에서는 SSH 터널로만 확인한다 (보안 그룹에 8000을 열지 않는다)
     ports: ["127.0.0.1:8000:8000"]
@@ -54,9 +54,9 @@ services:
       VLLM_URL: http://vllm:8000
       VLLM_MODEL: ${VLLM_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
       # 1주차 측정값으로 정하는 값. 코드를 고치지 않고 .env로 바꾼다
-      LLM_WORKER_MAXSLOTS: ${WORKER_MAX_SLOTS:-8}
+      LLM_WORKER_MAXSLOTS: ${WORKER_MAX_SLOTS:-50}
       LLM_WORKER_BUDGET_BMAX: ${WORKER_B_MAX:-2048}
-      LLM_WORKER_CREDIT_KVGBPERREQUEST: ${WORKER_KV_GB_PER_REQUEST:-0.5}
+      LLM_WORKER_CREDIT_KVGBPERREQUEST: ${WORKER_KV_GB_PER_REQUEST:-0.2}
       LLM_WORKER_ENGINE_VLLMMAXTOKENS: ${VLLM_MAX_TOKENS:-256}
     # Membership(인출 중지)과 Monitoring(지표 수집)이 CPU 서버에서 이 주소로 부른다
     ports: ["${SERVER_PORT:-8091}:${SERVER_PORT:-8091}"]
