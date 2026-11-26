@@ -104,6 +104,7 @@ public class LoadTest {
     final int warmupSec;
     final long seed;
     final int timeoutSec;
+    final int drainSec;
     final String csv;
     final boolean failOnFail;
     final int charsPerToken;
@@ -116,6 +117,9 @@ public class LoadTest {
     final ConcurrentLinkedQueue<Result> results = new ConcurrentLinkedQueue<>();
     final AtomicInteger inFlight = new AtomicInteger();
     final AtomicInteger maxInFlight = new AtomicInteger();
+    /** 진행 중인 요청과 그 응답 스트림. 마감(drain)이나 Ctrl+C 때 끊는 데 쓴다. */
+    final Map<Result, InputStream[]> active = new java.util.concurrent.ConcurrentHashMap<>();
+    final java.util.concurrent.atomic.AtomicBoolean reported = new java.util.concurrent.atomic.AtomicBoolean();
     long startNanos;
 
     LoadTest(Map<String, String> a) {
@@ -127,6 +131,7 @@ public class LoadTest {
         warmupSec = Integer.parseInt(a.getOrDefault("warmup-sec", "60"));
         seed = Long.parseLong(a.getOrDefault("seed", "42"));
         timeoutSec = Integer.parseInt(a.getOrDefault("timeout-sec", "600"));
+        drainSec = Integer.parseInt(a.getOrDefault("drain-sec", "60"));
         csv = a.get("csv");
         failOnFail = a.containsKey("fail-on-fail");
         charsPerToken = Integer.parseInt(a.getOrDefault("chars-per-token", "4"));
@@ -150,6 +155,8 @@ public class LoadTest {
             return;
         }
         LoadTest t = new LoadTest(a);
+        // Ctrl+C로 멈춰도 그때까지의 결과를 요약한다. 끝나지 않은 요청은 interrupted로 센다
+        Runtime.getRuntime().addShutdownHook(new Thread(t::reportOnInterrupt));
         boolean pass = switch (t.mode) {
             case "burst" -> t.runBurst();
             case "steady" -> t.runSteady();
@@ -196,9 +203,10 @@ public class LoadTest {
             }
             startNanos = System.nanoTime();
             gate.countDown();
-            progressUntil(done, requests);
+            progressUntil(done, requests, Long.MAX_VALUE);  // 요청마다 timeout-sec로 끊기므로 전체도 그 안에 끝난다
         }
         long wallMs = elapsedMs();
+        if (!reported.compareAndSet(false, true)) return false;
         return reportBurst(new ArrayList<>(results), wallMs);
     }
 
@@ -227,9 +235,16 @@ public class LoadTest {
                     }
                 });
             }
-            progressUntil(done, -1);
+            // 측정이 끝나면 새 요청은 보내지 않는다. 진행 중 요청은 drain-sec까지만 기다리고 끊어 에러로 센다
+            progressUntil(done, -1, endMs + drainSec * 1000L);
+            if (done.getCount() > 0) {
+                System.out.printf("  마감: 측정 종료 후 %d초가 지나 끝나지 않은 요청 %d건을 끊고 에러(drain-timeout)로 셉니다%n",
+                        drainSec, active.size());
+                abortActive("drain-timeout");
+            }
         }
         long wallMs = elapsedMs();
+        if (!reported.compareAndSet(false, true)) return false;
         return reportSteady(new ArrayList<>(results), wallMs);
     }
 
@@ -240,6 +255,7 @@ public class LoadTest {
         int now = inFlight.incrementAndGet();
         maxInFlight.accumulateAndGet(now, Math::max);
         InputStream[] holder = new InputStream[1];
+        active.put(r, holder);
         ScheduledFuture<?> killer = watchdog.schedule(() -> {
             InputStream in = holder[0];
             if (in != null) {
@@ -271,6 +287,7 @@ public class LoadTest {
             }
         } finally {
             killer.cancel(false);
+            active.remove(r);
             inFlight.decrementAndGet();
             results.add(r);
         }
@@ -314,8 +331,38 @@ public class LoadTest {
         }
     }
 
-    void progressUntil(CountDownLatch done, int total) throws InterruptedException {
+    /** 끝나지 않은 요청에 이유를 적고 응답 스트림을 닫는다. 읽던 스레드는 곧 끝나 결과에 들어간다. */
+    void abortActive(String reason) {
+        for (Map.Entry<Result, InputStream[]> e : active.entrySet()) {
+            Result r = e.getKey();
+            if (r.error.isEmpty() && r.doneMs < 0 && !r.failed) r.error = reason;
+            InputStream in = e.getValue()[0];
+            if (in != null) {
+                try { in.close(); } catch (IOException ignored) { }
+            }
+        }
+    }
+
+    /** Ctrl+C: 아직 요약하지 않았다면 끝난 요청과 끝나지 않은 요청(interrupted)을 합쳐 요약한다. */
+    void reportOnInterrupt() {
+        if (!reported.compareAndSet(false, true)) return;
+        List<Result> rs = new ArrayList<>(results);
+        for (Result r : active.keySet()) {
+            if (r.error.isEmpty() && r.doneMs < 0 && !r.failed) r.error = "interrupted";
+            if (!rs.contains(r)) rs.add(r);
+        }
+        System.out.printf("%n중단됨: 끝나지 않은 요청 %d건은 interrupted로 셉니다%n", active.size());
+        try {
+            if ("steady".equals(mode)) reportSteady(rs, elapsedMs());
+            else reportBurst(rs, elapsedMs());
+        } catch (IOException e) {
+            System.out.println("요약 저장 실패: " + e.getMessage());
+        }
+    }
+
+    void progressUntil(CountDownLatch done, int total, long deadlineMs) throws InterruptedException {
         while (!done.await(5, TimeUnit.SECONDS)) {
+            if (elapsedMs() >= deadlineMs) return;
             System.out.printf("  %4ds  진행 중 %d건, 끝난 요청 %d건%s%n", elapsedMs() / 1000, inFlight.get(),
                     results.size(), total > 0 ? " / " + total : "");
         }
@@ -520,6 +567,7 @@ public class LoadTest {
                   --chars-per-token K      토큰당 글자 수 (기본 4, front-gateway와 같게)
                   --seed S                 짧은/긴 구성과 본문 난수 (기본 42)
                   --timeout-sec S          요청 하나의 최대 대기 (기본 600)
+                  --drain-sec S            steady: 측정이 끝난 뒤 진행 중 요청을 기다리는 최대 시간 (기본 60, 넘으면 에러로 셈)
                   --csv PATH               요청별 기록 저장
                   --fail-on-fail           FAIL이면 종료 코드 1
                 """);

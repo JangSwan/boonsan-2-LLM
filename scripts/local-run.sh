@@ -38,7 +38,7 @@ start_one() {
   if [ -f "$RUN/pids/$svc.pid" ] && kill -0 "$(cat "$RUN/pids/$svc.pid")" 2>/dev/null; then return; fi
   # shellcheck disable=SC2086
   env $COMMON_ENV INSTANCE_ID="$svc" SERVER_PORT="$port" $extra \
-    nohup java -Xms64m -Xmx256m -XX:TieredStopAtLevel=1 -jar "$ROOT/$module/build/libs/$module.jar" \
+    nohup java -Xms64m -Xmx256m -XX:TieredStopAtLevel=1 -Djdk.httpclient.keepalive.timeout=3 -jar "$ROOT/$module/build/libs/$module.jar" \
     >"$RUN/logs/$svc.log" 2>&1 &
   echo $! >"$RUN/pids/$svc.pid"
 }
