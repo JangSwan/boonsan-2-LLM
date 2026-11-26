@@ -81,10 +81,11 @@ public record WorkerProperties(
      * @param vllmUrl            real: vLLM(OpenAI 호환) 주소
      * @param vllmModel          real: 모델 이름
      * @param vllmMaxTokens      real: 요청당 최대 출력 토큰
+     * @param vllmOpenRetries    real: 토큰을 받기 전 연결이 끊긴 요청을 그 요청만 다시 여는 횟수
      */
     public record Engine(long stepBaseMs, double prefillMsPerToken, double decodeMsPerRequest, long idleWaitMs,
                          int outputTokensMin, int outputTokensMax, int charsPerToken, String crashMarker,
                          long crashRestartMs, long loadDelayMs, String vllmUrl, String vllmModel,
-                         int vllmMaxTokens) {
+                         int vllmMaxTokens, int vllmOpenRetries) {
     }
 }

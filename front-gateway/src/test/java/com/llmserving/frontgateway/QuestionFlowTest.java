@@ -91,6 +91,23 @@ class QuestionFlowTest {
     }
 
     @Test
+    void 재시도한_답이_더_짧아_마지막_조각이_걸러져도_SSE를_닫는다() throws Exception {
+        MvcResult result = ask("다시 생성되는 질문");
+        String id = enqueued.get().requestId();
+
+        push(new StreamChunk(id, 0, "첫", true, false));      // 1회차: 세 조각까지 보내고 엔진에서 사라짐
+        push(new StreamChunk(id, 1, "시도", false, false));
+        push(new StreamChunk(id, 2, "답", false, false));
+        push(new StreamChunk(id, 0, "다시", true, false));    // 2회차: 더 짧게 끝남 (마지막 순번 1 ≤ 2)
+        push(new StreamChunk(id, 1, "", false, true));
+
+        String body = mvc.perform(asyncDispatch(result)).andReturn().getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(body.split("event:token", -1)).hasSize(5);   // 1회차 3개 + 마지막 표시 1개
+        assertThat(body).contains("\"isLast\":true").doesNotContain("다시");
+    }
+
+    @Test
     void 격리된_요청은_실패_이벤트를_받고_닫힌다() throws Exception {
         MvcResult result = ask("엔진을 죽이는 질문");
         String id = enqueued.get().requestId();

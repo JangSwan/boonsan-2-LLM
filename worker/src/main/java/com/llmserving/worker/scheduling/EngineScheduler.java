@@ -30,6 +30,7 @@ import org.springframework.stereotype.Component;
  *       긴 입력 L은 남은 예산만큼 조각으로 읽힌다 (sd2 9~10번).</li>
  *   <li>첫 토큰, 진척, 완료는 EngineEventListener로 알린다 (CreditManager, LeaseRenewer가 구독).</li>
  *   <li>엔진이 비정상 종료하면 생성 시험이 다시 통과할 때까지 남은 여유를 0으로 알린다 (재시작 중에 새 작업을 받지 않는다).</li>
+ *   <li>엔진이 정상인데 요청 하나만 처리하지 못하면(StepResult.failedIds) 그 요청만 빼고 나머지는 계속 실행한다.</li>
  * </ul>
  */
 @Slf4j
@@ -112,6 +113,7 @@ public class EngineScheduler {
         int unstartedAfter;
         Set<String> firstTokens = new HashSet<>(result.prefillDoneIds());
         Set<String> finished = new HashSet<>(result.finishedIds());
+        Set<String> failed = new HashSet<>(result.failedIds());
         synchronized (this) {
             plan = inFlightPlan;
             inFlightPlan = null;
@@ -124,7 +126,14 @@ public class EngineScheduler {
                 }
             }
             result.finishedIds().forEach(jobs::remove);
+            // 엔진이 그 요청만 처리하지 못했다: 엔진에서 빼고 진척을 보고하지 않는다. 다른 요청은 그대로 진행한다.
+            // 진척 보고가 끊기므로 lease 갱신이 멈추고, 만료되면 broker의 재시도·격리 경로가 처리한다 (sd4 9~17번).
+            failed.forEach(jobs::remove);
             unstartedAfter = unstartedTokens();
+        }
+        if (!failed.isEmpty()) {
+            log.warn("event=engine.request-failed failed={} msg=엔진이 이 요청만 처리하지 못함, 진척 보고 중단 (엔진은 정상)",
+                    failed);
         }
         List<String> members = new ArrayList<>();
         if (plan != null) {
@@ -132,6 +141,9 @@ public class EngineScheduler {
             members.addAll(plan.prefillChunks().keySet());
         }
         for (String id : members) {
+            if (failed.contains(id)) {
+                continue;
+            }
             if (firstTokens.contains(id)) {
                 listeners.forEach(l -> l.onFirstToken(id, unstartedAfter));
             } else {

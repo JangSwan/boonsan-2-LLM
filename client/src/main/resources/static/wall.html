@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>답변 월 (시연)</title>
+  <link rel="stylesheet" href="css/app.css">
+  <script src="js/config.js"></script>
+  <script src="js/SseClient.js"></script>
+  <script src="js/AnswerWall.js"></script>
+</head>
+<body>
+<header>
+  <h1>LLM Serving Platform</h1>
+  <nav>
+    <a href="index.html">질문</a>
+    <a href="wall.html" aria-current="page">답변 월</a>
+    <a href="admin.html">운영자</a>
+  </nav>
+</header>
+<!-- 시연 도구: 여러 질문을 동시에 보내 각자 다른 답이 흘러나오는 모습을 보여 준다. EA 화면이 아니며 업무 판단을 하지 않는다. -->
+<div class="wall-bar">
+  <label>타일 <select id="tiles">
+    <option>6</option><option selected>12</option>
+  </select></label>
+  <label><input type="checkbox" id="mix-long"> 긴 입력 20% 섞기</label>
+  <button type="button" id="start" class="primary">시작</button>
+  <button type="button" id="stop" hidden>멈춤</button>
+  <span class="spacer"></span>
+  <span class="wall-stat">진행 <b id="s-running">0</b></span>
+  <span class="wall-stat">완료 <b id="s-done">0</b></span>
+  <span class="wall-stat">실패 <b id="s-failed">0</b></span>
+  <span class="wall-stat">첫 토큰 평균 <b id="s-avg">–</b></span>
+  <span class="wall-stat">최대 <b id="s-max">–</b></span>
+</div>
+<p class="wall-note muted">브라우저는 같은 주소로 동시에 6개까지만 연결하므로, 타일 12개는 localhost와 127.0.0.1로 나눠 보낸다. 더 큰 부하는 부하 생성기(scripts/loadtest)로 함께 건다.</p>
+<div id="wall" class="wall"></div>
+</body>
+</html>

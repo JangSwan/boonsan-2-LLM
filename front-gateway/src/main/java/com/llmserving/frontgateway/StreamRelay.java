@@ -70,10 +70,25 @@ public class StreamRelay {
         }
     }
 
-    /** 토큰 조각 (sd1 22번). DuplicateFilter를 통과한 조각만 보내고, 마지막 조각이면 SSE를 닫는다. */
+    /**
+     * 토큰 조각 (sd1 22번). DuplicateFilter를 통과한 조각만 보내고, 마지막 조각이면 SSE를 닫는다.
+     * 재시도된 요청은 순번을 0부터 다시 세는데, 실제 엔진은 같은 질문에도 답 길이가 달라질 수 있다. 다시 생성한 답이
+     * 앞서 보낸 것보다 짧으면 마지막 조각의 순번이 이미 보낸 순번 이하라 걸러진다. 이때도 요청은 끝났으므로 본문 없이
+     * 마지막 표시만 보내고 SSE를 닫는다 (닫지 않으면 이용자는 SSE 시간 제한까지 기다린다).
+     */
     public void onChunk(StreamChunk chunk) {
         Channel channel = channels.get(chunk.requestId());
-        if (channel == null || !duplicateFilter.accept(chunk)) {
+        if (channel == null) {
+            return;
+        }
+        if (!duplicateFilter.accept(chunk)) {
+            if (chunk.isLast()) {
+                channel.send(ApiPaths.SseEvents.TOKEN,
+                        new StreamChunk(chunk.requestId(), chunk.seq(), "", false, true));
+                log.info("event=stream.completed requestId={} lastSeq={} msg=재시도한 답이 더 짧아 마지막 표시만 보내고 SSE 종료",
+                        chunk.requestId(), chunk.seq());
+                channel.complete();
+            }
             return;
         }
         if (channel.send(ApiPaths.SseEvents.TOKEN, chunk)) {

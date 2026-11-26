@@ -33,6 +33,7 @@ docker compose up --build  # 전체 실행 (mock 프로필)
 ```
 
 - 이용자 화면: http://localhost:8140 , 운영자 화면: http://localhost:8140/admin.html
+- 답변 월(시연 도구): http://localhost:8140/wall.html — 타일 6~12개가 서로 다른 질문을 동시에 보내고 답이 함께 흘러나오는 모습을 보여 준다. `wall.html?start&tiles=12`로 열면 바로 시작한다. 브라우저 연결 제한(주소당 6개) 때문에 화면 하나에 최대 12개이고, 더 큰 부하는 부하 생성기로 함께 건다. EA 화면이 아니라 시연용이다.
 - 명령줄 질문: `curl -N -X POST localhost:8080/api/front-gateway/questions -H 'Content-Type: application/json' -d '{"text":"안녕하세요"}'`
 - Docker 없이 실행: `./gradlew build -x test && scripts/local-run.sh start` (같은 포트, `scripts/local-run.sh stop worker-5`로 장애 시연)
 
@@ -66,13 +67,118 @@ docker compose logs -f | grep -E 'event=(worker\.excluded|lease\.reclaimed|broke
 
 | Port | mock | real |
 |---|---|---|
-| `InferenceEnginePort` (worker) | `MockInferenceEngine` | `VllmEngineAdapter` (OpenAI 호환 `/v1/completions` 스트림, `VLLM_URL`) |
+| `InferenceEnginePort` (worker) | `MockInferenceEngine` | `VllmEngineAdapter` (OpenAI 호환 `/v1/chat/completions` 스트림, `VLLM_URL`) |
 | `SpotInstancePort` (membership) | `MockSpotInstanceClient` → fake-aws | `SpotInstanceClient` (AWS SDK EC2, `AWS_LAUNCH_TEMPLATE_ID`) |
 | `ModelStorePort` (model-manager) | `MockModelStoreDAO` | `ModelStoreDAO` (S3) |
 
 자격 증명과 엔진 주소는 `.env`로만 받는다 (커밋하지 않음).
 
 real 모드 전제: AWS가 만든 대체 인스턴스의 `INSTANCE_ID`는 그 **EC2 인스턴스 ID**여야 한다. `Replenisher`는 `SpotInstancePort`가 돌려준 인스턴스 ID와 하트비트의 `workerId`가 같을 때 합류를 확인하기 때문이다 (mock에서는 fake-aws가 `worker-spare`를 돌려준다). 시작 템플릿(user-data)에서 인스턴스 메타데이터로 이 값을 넣는다. 이 전제가 지켜지면 대체 서버는 늘 새 ID로 합류하므로 중복 방지 키 `replace-<workerId>`(EC2 clientToken)가 다른 장애와 겹치지 않는다.
+
+## real 모드 실행 (GPU 2대 + CPU 1대)
+
+QAS1·QAS2를 실제 GPU로 재는 구성이다. 리전은 서울(ap-northeast-2), 서버 3대는 같은 VPC·같은 보안 그룹에 둔다.
+
+| 서버 | 인스턴스 | 띄우는 것 | 파일 |
+|---|---|---|---|
+| GPU 1, 2 | g6.xlarge (L4), Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04), 디스크 150GB | vLLM + worker 1개 | `docker-compose.real-gpu.yml` |
+| CPU | m7i.2xlarge 정도, Ubuntu + Docker | broker 2, membership 2, model-manager, monitoring, fake-aws, front-gateway, client, redis, 부하 생성기 | `docker-compose.yml` + `docker-compose.real-control.yml` |
+
+worker는 GPU 서버 안에서 돈다. 서버가 통째로 사라지면 하트비트도 같이 끊겨야 Membership이 장애를 감지하기 때문이다 (sd3). CPU 서버의 앱은 mock 프로필 그대로다. real이 필요한 외부 의존은 추론 엔진뿐이고, 재보충은 fake-aws로 시연한다.
+
+### 1. 보안 그룹
+
+| 유형 | 포트 | 소스 | 용도 |
+|---|---|---|---|
+| SSH | 22 | 팀원 IP (`x.x.x.x/32`) | 접속 |
+| 사용자 지정 TCP | 8080-8140 | **이 보안 그룹 자신** (`sg-...`) | 서버 사이 앱 호출 |
+
+vLLM(8000)과 앱 포트는 인터넷에 열지 않는다. 화면은 SSH 터널로 본다.
+
+### 2. 코드와 jar (모든 서버)
+
+```bash
+git clone https://github.com/JangSwan/boonsan-2-LLM.git && cd boonsan-2-LLM
+cp .env.example .env && nano .env      # 서버마다 값 채우기
+scripts/real/build-jars.sh worker      # GPU 서버: worker만
+scripts/real/build-jars.sh             # CPU 서버: 전체
+```
+
+서버에 Java를 설치하지 않는다. jar는 Docker 안에서 빌드한다. 레포가 비공개면 clone할 때 GitHub 토큰이 필요하다. `docker compose`가 없다고 나오면 `sudo apt-get install -y docker-compose-plugin`으로 설치한다.
+
+### 3. 띄우기
+
+CPU 서버를 먼저 띄운다.
+
+```bash
+# CPU 서버
+docker compose -f docker-compose.yml -f docker-compose.real-control.yml --env-file .env up -d --build \
+  redis broker-replica broker-primary membership-1 membership-2 model-manager monitoring fake-aws front-gateway client
+
+# GPU 서버 (각각, .env의 INSTANCE_ID·SERVER_PORT만 다르게)
+docker compose -f docker-compose.real-gpu.yml --env-file .env up -d --build
+docker compose -f docker-compose.real-gpu.yml logs -f worker    # event=worker.joined 확인
+```
+
+`up`은 vLLM이 준비될 때까지 기다렸다가 worker를 띄운다. 처음에는 가중치를 받느라 10~15분 걸린다. 화면은 내 PC에서 CPU 서버로 터널을 열고 `http://localhost:8140`을 연다.
+
+```bash
+ssh -i llm-key.pem -N -L 8080:localhost:8080 -L 8110:localhost:8110 -L 8120:localhost:8120 -L 8140:localhost:8140 ubuntu@<CPU 퍼블릭 IP>
+```
+
+### 4. 슬롯과 상한 정하기 (1주차 측정)
+
+GPU 서버에서 vLLM 로그의 두 줄을 본다.
+
+```bash
+docker compose -f docker-compose.real-gpu.yml logs vllm | grep -E "KV cache|Maximum concurrency"
+```
+
+- `Maximum concurrency for 8192 tokens per request: X`는 8,192토큰을 꽉 채운 요청 기준이다. QAS 부하는 짧은 질문 80%(500토큰 이하), 긴 입력 20%(약 4,000토큰)라 실제로는 더 들어간다. `GPU KV cache size: N tokens`를 요청당 평균 약 1,200토큰(보고서 4.4)으로 나눈 값을 상한으로 보고, 그보다 조금 낮게 `WORKER_MAX_SLOTS`를 정한다.
+- `WORKER_KV_GB_PER_REQUEST` = 단계의 `kv-gb-per-gpu`(model-manager 설정, U0 6.0 / FP8 10.0) ÷ `WORKER_MAX_SLOTS`. 슬롯보다 KV 기준이 먼저 막히지 않게 맞춘다.
+- CPU 서버의 `BROKER_CONCURRENCY_CAP`: QAS 측정은 GPU 대수 × 슬롯, N+1 장애 시연은 (GPU 대수 - 1) × 슬롯.
+- 값을 바꾸면 `docker compose ... up -d`로 다시 띄운다. 코드는 고치지 않는다.
+
+1주차 측정 결과 (g6.xlarge L4 1대, vLLM 0.34.0, `--max-model-len 8192 --gpu-memory-utilization 0.90`). GPU당 동시 처리는 요청당 평균 약 1,450토큰(짧은 질문 입력 500 + 답변 약 250이 80%, 긴 입력 4,000 + 답변 약 250이 20%)으로 나눈 값이다.
+
+| 설정 | KV 메모리 | KV 토큰 수 | GPU당 동시 처리 |
+|---|---|---|---|
+| BF16 (U0) | 3.67 GiB | 25,600 | 약 17건 |
+| 가중치 FP8 | 10.07 GiB | 77,824 | 약 53건 |
+| 가중치 FP8 + KV FP8 | 10.07 GiB | 143,360 | 약 99건 |
+
+이 결과로 운영 설정을 FP8 + KV FP8, 워커당 슬롯 50(보고서 가정 GPU당 50건), 요청당 KV 0.2GB(10GB ÷ 50), 상한 100(2대)으로 정했다 (`.env.example` 기본값). 두 FP8 설정 모두 한국어 짧은 답변이 BF16과 비슷하게 나왔다(간이 확인).
+
+BF16(U0)·가중치 FP8·FP8 + KV FP8은 `.env`의 `VLLM_EXTRA_ARGS`만 바꿔 잰다 (`""` / `--quantization fp8` / `--quantization fp8 --kv-cache-dtype fp8`).
+
+### 5. QAS 측정 (CPU 서버에서)
+
+보고서의 수치는 GPU 4대분(상한 약 200)이다. GPU 2대면 C2 구조상 처리량이 대수에 비례하므로 절반으로 환산해 잰다.
+
+| | 보고서 (4대분) | GPU 2대 |
+|---|---|---|
+| QAS2 동시 부하 (상한의 80%) | 160건 | 상한 × 0.8 (예: 상한 100이면 80건) |
+| QAS1 폭주 | 1,000건 | 500건 |
+
+```bash
+# QAS2: 5분 측정 (앞 1분은 워밍업으로 뺀다)
+docker run --rm --network host --ulimit nofile=65535:65535 -v "$PWD":/w -w /w eclipse-temurin:21-jdk \
+  java scripts/loadtest/LoadTest.java --mode steady --concurrency 80 --duration-sec 300 --warmup-sec 60 --csv qas2.csv
+# QAS1: 500건 폭주
+docker run --rm --network host --ulimit nofile=65535:65535 -v "$PWD":/w -w /w eclipse-temurin:21-jdk \
+  java scripts/loadtest/LoadTest.java --mode burst --requests 500 --csv qas1.csv
+```
+
+판정 기준은 보고서 그대로다: QAS2는 첫 토큰 p95 3초 이하, QAS1은 짧은 질문 30초·긴 입력 순번 안내 1초·첫 토큰 180초를 넘긴 요청과 실패를 합해 0.1% 이하. QAS1 결과에는 "30초 안에 첫 토큰을 받은 짧은 질문의 최대 초기 순번"도 나오므로, 기준을 못 넘으면 한계를 이 숫자로 보고한다.
+
+답변이 요청마다 제대로 돌아오는지도 같이 보려면 `--check --answers answers.jsonl`을 붙인다. 질문마다 표식 `[Q번호]`와 덧셈 문제를 붙여, 끝난 답변마다 자기 표식이 있는지, **다른 요청의 표식이 섞이지 않았는지**(섞임 0건이어야 함), 덧셈 정답이 들어 있는지 센다. 답변 전체는 JSONL로 저장된다. 표식 없음은 모델이 지시를 따르지 않은 것이라 섞임과 따로 센다.
+
+**QAS 측정에는 mock 워커를 섞지 않는다.** 가짜 엔진이 처리량을 부풀린다. mock 워커를 섞는 것은 N+1 장애 시연 때만 한다.
+
+### 6. 끝나면
+
+- GPU 서버: `docker compose -f docker-compose.real-gpu.yml down` 후 콘솔에서 **중지** (오래 쉬면 AMI를 만들고 **종료**).
+- CPU 서버도 중지한다. 켜 둔 GPU 1대가 하루 약 3.4만원이다.
 
 ## 설계에서 정하지 않아 구현에서 정한 것
 
@@ -97,3 +203,6 @@ real 모드 전제: AWS가 만든 대체 인스턴스의 `INSTANCE_ID`는 그 **
 - **기다리는 요청의 진척**: `LeaseRenewer`는 스텝에 실제로 들어간 요청만 갱신한다 (진척이 끊기면 갱신을 멈춘다는 sd4 규칙). 짧은 요청이 몰리면 긴 입력이 한두 스텝 조각을 못 받을 수 있지만, 워커당 슬롯이 8이고 먼저 들어간 요청은 Prefill 뒤 Decode(스텝당 1토큰)로 넘어가므로, B 하한 256에서 밀림은 수백 ms 수준이라 진척 제한(4초)·lease TTL(10초)에 닿지 않는다. "엔진이 정상이면 워커가 든 요청 전부 갱신"으로 바꾸면 엔진이 죽지 않고 멈췄을 때 lease가 영원히 갱신되어 sd4 보호가 깨지므로 하지 않았다.
 - **리더 교체 중 재보충 기록**: `Replenisher`의 대기 목록(대체 인스턴스 → 장애 워커)은 리더 메모리에만 있다. 재보충 도중 리더가 바뀌면 새 워커의 합류는 확인되지만 그 장애의 T재보충 기록과 알림은 빠진다. Membership은 데이터 복제 없이 하트비트로 다시 채우는 설계라 복제하지 않았다.
 - **409 LEASE_NOT_OWNED**: lease ID는 발급마다 새 UUID라 한 lease는 한 워커의 것이고, 회수·만료된 lease는 지워져 404가 난다. 남의 lease를 갱신·완료하는 상황이 구조상 생기지 않으므로 renew·complete API에 workerId를 더하지 않았다.
+- **재시도된 요청의 답 이어 붙이기 (real)**: 재시도된 요청은 순번을 0부터 다시 센다. `DuplicateFilter`는 이미 보낸 순번 이하를 거르므로, 이용자는 1회차에서 받은 앞부분 뒤에 2회차 답의 나머지 순번을 이어 받는다. mock은 같은 질문에 같은 답을 내지만 실제 엔진은 답이 달라질 수 있어, 재시도된 답은 문장이 어긋날 수 있다. 2회차 답이 더 짧아 마지막 조각이 걸러지면 `StreamRelay`가 본문 없이 마지막 표시만 보내고 SSE를 닫는다(닫지 않으면 SSE 시간 제한 10분까지 기다린다).
+- **입력 토큰 추정 (real)**: Front Gateway는 입력 토큰을 `글자 수 ÷ chars-per-token(4)`로 추정한다. 영문에는 맞지만 한글은 실제 Llama 토크나이저가 한 글자를 대략 1토큰 안팎으로 세서, 한글 질문은 실제보다 3~4배 적게 잡힌다. 워커의 미시작 토큰·크레딧 계산이 그만큼 낙관적이다. 화면의 토큰 표시는 한글 기준으로 고쳤고, 서버 쪽 추정은 그대로 두었다.
+

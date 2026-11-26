@@ -64,3 +64,5 @@ llm:
       vllm-url: ${VLLM_URL:http://localhost:8000}
       vllm-model: ${VLLM_MODEL:meta-llama/Llama-3.1-8B-Instruct}
       vllm-max-tokens: 256
+      # 토큰을 받기 전에 연결이 끊긴 요청을 그 요청만 다시 여는 횟수 (keep-alive 경쟁 대비). 넘으면 엔진 장애로 본다
+      vllm-open-retries: 2

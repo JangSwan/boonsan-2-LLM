@@ -45,7 +45,7 @@ public final class WorkerTestSupport {
                 List.of("http://b1", "http://b2"), List.of("http://m1"), "http://mm", "http://fg", 1,
                 new WorkerProperties.Budget(256, 2048, 3000, 100),
                 new WorkerProperties.Credit(0.5, 16000),
-                new WorkerProperties.Engine(0, 0, 0, 5, 3, 3, 4, crashMarker, 2000, 0, "", "", 16));
+                new WorkerProperties.Engine(0, 0, 0, 5, 3, 3, 4, crashMarker, 2000, 0, "", "", 16, 2));
     }
 
     /** EngineScheduler + ModelRuntime + MockInferenceEngine (지연 0). */

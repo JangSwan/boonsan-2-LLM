@@ -1,0 +1,71 @@
+# real 모드: GPU 서버 1대에서 실행한다 (vLLM + worker 앱 1개).
+# GPU 서버마다 .env의 INSTANCE_ID·SERVER_PORT만 다르게 두고 같은 파일을 쓴다. 실행 순서는 README "real 모드 실행".
+#   docker compose -f docker-compose.real-gpu.yml --env-file .env up -d --build
+# worker를 GPU 서버 안에 두는 이유: 서버가 통째로 사라지면 하트비트도 함께 끊겨야 Membership이 장애를 감지한다(sd3).
+
+services:
+  # 추론 엔진. B(스텝당 최대 토큰 수)는 엔진 시작 설정 max-num-batched-tokens로 넣는다 (CLAUDE.md 2절 가짜 엔진).
+  # 모델 이름은 위치 인자로 준다 (--model 옵션은 vLLM에서 폐지 예정).
+  vllm:
+    image: vllm/vllm-openai:${VLLM_IMAGE_TAG:-latest}
+    init: true
+    ipc: host
+    restart: unless-stopped
+    environment:
+      HF_TOKEN: ${HF_TOKEN:?HF_TOKEN을 .env에 넣으세요}
+    volumes:
+      - ${HF_CACHE_DIR:-~/.cache/huggingface}:/root/.cache/huggingface
+    command: >-
+      ${VLLM_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
+      --max-model-len ${VLLM_MAX_MODEL_LEN:-8192}
+      --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION:-0.90}
+      --max-num-batched-tokens ${WORKER_B_MAX:-2048}
+      --max-num-seqs ${WORKER_MAX_SLOTS:-50}
+      ${VLLM_EXTRA_ARGS:-}
+    # 호스트에서는 SSH 터널로만 확인한다 (보안 그룹에 8000을 열지 않는다)
+    ports: ["127.0.0.1:8000:8000"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # 처음에는 가중치(약 16GB)를 받으므로 오래 기다린다
+      start_period: 1200s
+
+  worker:
+    build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: worker } }
+    image: llm-serving/worker
+    restart: "no"
+    environment:
+      SPRING_PROFILES_ACTIVE: real
+      INSTANCE_ID: "${INSTANCE_ID:?INSTANCE_ID를 .env에 넣으세요}"
+      SERVER_PORT: ${SERVER_PORT:-8091}
+      BROKER_URLS: http://${CONTROL_IP:?CONTROL_IP를 .env에 넣으세요}:8081,http://${CONTROL_IP}:8082
+      MEMBERSHIP_URLS: http://${CONTROL_IP}:8101,http://${CONTROL_IP}:8102
+      MODEL_MANAGER_URL: http://${CONTROL_IP}:8110
+      FRONT_GATEWAY_URL: http://${CONTROL_IP}:8080
+      VLLM_URL: http://vllm:8000
+      VLLM_MODEL: ${VLLM_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
+      # 1주차 측정값으로 정하는 값. 코드를 고치지 않고 .env로 바꾼다
+      LLM_WORKER_MAXSLOTS: ${WORKER_MAX_SLOTS:-50}
+      LLM_WORKER_BUDGET_BMAX: ${WORKER_B_MAX:-2048}
+      LLM_WORKER_CREDIT_KVGBPERREQUEST: ${WORKER_KV_GB_PER_REQUEST:-0.2}
+      LLM_WORKER_ENGINE_VLLMMAXTOKENS: ${VLLM_MAX_TOKENS:-256}
+    # Membership(인출 중지)과 Monitoring(지표 수집)이 CPU 서버에서 이 주소로 부른다
+    ports: ["${SERVER_PORT:-8091}:${SERVER_PORT:-8091}"]
+    mem_limit: 1g
+    depends_on:
+      vllm: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:$${SERVER_PORT}/actuator/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
