@@ -95,8 +95,8 @@ scripts/cloud/status.sh
 ### 끄기
 
 - 다 쓰면 콘솔에서 **인스턴스 중지**를 누른다.
-- 잊어도 매일 00:00(한국 시간)에 자동으로 중지된다. 10분 전에 접속 중인 터미널에 알림이 뜬다.
-- 밤늦게 측정해야 하면 그날만 `sudo rm /etc/cron.d/llm-auto-stop`으로 끄고, 끝나면 `sudo scripts/cloud/setup.sh`를 다시 실행해 되돌린다. 빌드는 캐시 덕분에 빨리 끝난다.
+- **자동 중지는 기본으로 꺼져 있다**(밤늦게 작업하는 일이 많아서). 끝날 때마다 콘솔에서 `실행 중`이 0개인지 직접 확인한다.
+- 매일 00:00(한국 시간) 자동 중지를 쓰고 싶으면 `.env`에서 `AUTO_STOP=1`로 바꾸고 `sudo scripts/cloud/setup.sh`를 다시 실행한다. 빌드는 캐시 덕분에 빨리 끝난다.
 
 ### 팀원 IP 추가
 
@@ -133,7 +133,7 @@ GPU 서버마다 README [real 모드 실행](../README.md#real-모드-실행-gpu
 docker rm -f vllm 2>/dev/null; docker compose -f docker-compose.real-gpu.yml --env-file .env up -d
 ```
 
-GPU 서버에도 밤 자동 중지를 걸어 둔다. GPU는 하루 켜 두면 약 3.4만원이다.
+GPU는 하루 켜 두면 약 3.4만원이다. 끝나면 반드시 중지한다. 자동 중지를 원하면 아래 한 줄로 매일 00:00(한국 시간)에 꺼지게 할 수 있다(선택).
 
 ```bash
 echo '0 15 * * * root /sbin/shutdown -h now' | sudo tee /etc/cron.d/llm-auto-stop
