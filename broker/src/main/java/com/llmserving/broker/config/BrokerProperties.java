@@ -18,6 +18,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param replicaUrl                  복제본 broker 주소 (주 브로커만 설정)
  * @param frontGatewayUrl             실패 통지 대상 Front Gateway 주소
  * @param failureNotifyAttempts       실패 통지 시도 횟수
+ * @param typedPull                   유형별 대기열 인출 (실측 후 보완, 비평 QAS1 제안 채택). 기본 꺼짐
  */
 @ConfigurationProperties("llm.broker")
 public record BrokerProperties(
@@ -33,9 +34,13 @@ public record BrokerProperties(
         int promoteAfterSec,
         String replicaUrl,
         String frontGatewayUrl,
-        int failureNotifyAttempts) {
+        int failureNotifyAttempts,
+        TypedPull typedPull) {
 
     public BrokerProperties {
+        if (typedPull == null) {
+            typedPull = TypedPull.disabled();
+        }
         // CLAUDE.md 6절 sd5 시간 조건: 락 갱신 주기 < 락 TTL ≤ X
         if (primaryLockRenewIntervalMs >= primaryLockTtlSec * 1000L) {
             throw new IllegalArgumentException("primary-lock-renew-interval-ms는 primary-lock-ttl-sec보다 짧아야 한다");
@@ -45,6 +50,39 @@ public record BrokerProperties(
         }
         if (concurrencyCap <= 0 || retryLimit <= 0 || leaseTtlSec <= 0) {
             throw new IllegalArgumentException("concurrency-cap, retry-limit, lease-ttl-sec는 양수여야 한다");
+        }
+    }
+
+    /**
+     * 유형별 대기열 인출 (llm.broker.typed-pull). 꺼져 있으면 지금까지와 같은 도착 순서 인출이다.
+     *
+     * @param enabled               켜기/끄기
+     * @param longThresholdTokens   입력 토큰이 이 값 이상이면 긴 요청 줄
+     * @param longDeadlineSec       긴 요청의 첫 토큰 기한 (QAS1: 180초)
+     * @param longDeadlineMarginSec 기한까지 이만큼 남으면(대기 ≥ 기한 − 여유) 짧은 요청보다 먼저 꺼낸다
+     * @param longMaxPerWorker      짧은 요청이 기다리는 동안 워커 1대가 동시에 가질 수 있는 긴 요청 lease 수
+     */
+    public record TypedPull(boolean enabled, int longThresholdTokens, int longDeadlineSec,
+                            int longDeadlineMarginSec, int longMaxPerWorker) {
+
+        public TypedPull {
+            if (enabled) {
+                if (longThresholdTokens <= 0 || longMaxPerWorker <= 0) {
+                    throw new IllegalArgumentException("typed-pull의 long-threshold-tokens, long-max-per-worker는 양수여야 한다");
+                }
+                if (longDeadlineMarginSec < 0 || longDeadlineMarginSec >= longDeadlineSec) {
+                    throw new IllegalArgumentException("typed-pull의 long-deadline-margin-sec는 0 이상, long-deadline-sec 미만이어야 한다");
+                }
+            }
+        }
+
+        public static TypedPull disabled() {
+            return new TypedPull(false, 0, 0, 0, 0);
+        }
+
+        /** 긴 요청을 짧은 요청보다 먼저 꺼내기 시작하는 대기 시간 (밀리초). */
+        public long promoteAfterWaitMs() {
+            return (longDeadlineSec - longDeadlineMarginSec) * 1000L;
         }
     }
 

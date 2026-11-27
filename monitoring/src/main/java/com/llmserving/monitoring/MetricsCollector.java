@@ -51,6 +51,8 @@ public class MetricsCollector {
             record("queue.quarantined", r.quarantinedCount());
             record("queue.active-leases", r.activeLeases());
             record("queue.concurrency-cap", r.concurrencyCap());
+            record("queue.length.short", r.shortLength());
+            record("queue.length.long", r.longLength());
         });
     }
 

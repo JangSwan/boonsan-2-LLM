@@ -44,9 +44,14 @@ public class BrokerFixture {
     public final SwitchableReplicaPort replicaPort = new SwitchableReplicaPort();
 
     public BrokerFixture(String instanceId, boolean primary, boolean withReplica, MutableClock clock, FakeLock lock) {
+        this(instanceId, primary, withReplica, clock, lock, 4, BrokerProperties.TypedPull.disabled());
+    }
+
+    public BrokerFixture(String instanceId, boolean primary, boolean withReplica, MutableClock clock, FakeLock lock,
+                         int concurrencyCap, BrokerProperties.TypedPull typedPull) {
         this.clock = clock;
-        this.properties = new BrokerProperties(instanceId, primary ? "primary" : "replica", 10, 4, 2, 1000,
-                "broker-primary", 1000, 3, 5, withReplica ? "http://replica" : "", "http://front", 1);
+        this.properties = new BrokerProperties(instanceId, primary ? "primary" : "replica", 10, concurrencyCap, 2, 1000,
+                "broker-primary", 1000, 3, 5, withReplica ? "http://replica" : "", "http://front", 1, typedPull);
         ObjectMapper objectMapper = new ObjectMapper();
         Ref<SharedQueue> sq = new Ref<>();
         Ref<QuarantineQueue> qq = new Ref<>();
@@ -54,7 +59,7 @@ public class BrokerFixture {
         this.brokerReplica = new BrokerReplica(objectMapper, lock.portFor(clock), clock, properties, sq, qq, lm);
         this.replicator = new Replicator(brokerReplica, replicaPort, lock.portFor(clock), objectMapper, clock,
                 properties, sq, qq, lm);
-        this.sharedQueue = new SharedQueue(replicator);
+        this.sharedQueue = new SharedQueue(replicator, clock, properties);
         this.quarantineQueue = new QuarantineQueue(replicator);
         this.leaseLimiter = new LeaseLimiter(properties);
         RetryCounter retryCounter = new RetryCounter(new RetryPolicy(properties), sharedQueue, quarantineQueue,

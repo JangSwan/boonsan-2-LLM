@@ -61,7 +61,7 @@ class AdminConsole {
     const metrics = await this.get(this.cfg.monitoringUrl + '/api/monitoring/metrics');
     if (!metrics) return;
     const value = (name) => (metrics.find((m) => m.name === name) || {}).value;
-    this.queue.innerHTML = ['queue.length', 'queue.active-leases', 'queue.concurrency-cap', 'queue.quarantined', 'workers.responding']
+    this.queue.innerHTML = ['queue.length', 'queue.length.short', 'queue.length.long', 'queue.active-leases', 'queue.concurrency-cap', 'queue.quarantined', 'workers.responding']
       .map((n) => `<div class="stat"><b>${value(n) ?? '—'}</b><span>${n.replace('queue.', '')}</span></div>`).join('');
     const workers = {};
     for (const m of metrics) {
