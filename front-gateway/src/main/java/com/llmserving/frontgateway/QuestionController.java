@@ -30,6 +30,7 @@ public class QuestionController {
     private final StreamRelay streamRelay;
     private final Clock clock;
     private final int charsPerToken;
+    private final double wideCharTokens;
 
     public QuestionController(RequestIdIssuer requestIdIssuer, VersionTagger versionTagger,
                               AdmissionPort queueBrokerClient, StreamRelay streamRelay, Clock clock,
@@ -40,6 +41,7 @@ public class QuestionController {
         this.streamRelay = streamRelay;
         this.clock = clock;
         this.charsPerToken = Math.max(1, properties.charsPerToken());
+        this.wideCharTokens = properties.wideCharTokens();
     }
 
     /** sd1 2~8번: 요청 ID 발급, 버전 태그, enqueue, 순번 안내. */
@@ -86,7 +88,35 @@ public class QuestionController {
     }
 
     private int estimateTokens(String text) {
-        int chars = text.codePointCount(0, text.length());
-        return Math.max(1, (chars + charsPerToken - 1) / charsPerToken);
+        return estimateTokens(text, charsPerToken, wideCharTokens);
+    }
+
+    /**
+     * 입력 토큰 수 추정. 한글·한자·가나는 1글자당 wideCharTokens 토큰, 나머지 글자는 charsPerToken 글자당 1토큰으로 센다.
+     * wideCharTokens가 0 이하면 모든 글자를 charsPerToken으로 나눈다 (예전 방식).
+     */
+    static int estimateTokens(String text, int charsPerToken, double wideCharTokens) {
+        int wide = 0;
+        int other = 0;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            if (wideCharTokens > 0 && isWide(cp)) {
+                wide++;
+            } else {
+                other++;
+            }
+            i += Character.charCount(cp);
+        }
+        int perToken = Math.max(1, charsPerToken);
+        long tokens = Math.round(wide * wideCharTokens) + (other + perToken - 1) / perToken;
+        return (int) Math.max(1, Math.min(Integer.MAX_VALUE, tokens));
+    }
+
+    private static boolean isWide(int codePoint) {
+        Character.UnicodeScript script = Character.UnicodeScript.of(codePoint);
+        return script == Character.UnicodeScript.HANGUL
+                || script == Character.UnicodeScript.HAN
+                || script == Character.UnicodeScript.HIRAGANA
+                || script == Character.UnicodeScript.KATAKANA;
     }
 }

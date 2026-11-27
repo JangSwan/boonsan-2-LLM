@@ -54,11 +54,12 @@ public class LeaseManager {
         if (k == 0) {
             return List.of();
         }
+        int workerLongActive = countLongLeases(workerId);
         List<Lease> issued;
         try {
             // 큐에서 제거와 lease 발급을 복제 메시지 하나로 커밋한다 (중간에 주 브로커가 죽어도 요청이 사라지지 않게).
             issued = replicator.transaction(() -> {
-                List<QueueItem> items = sharedQueue.pullMatching(versionTag, k);
+                List<QueueItem> items = sharedQueue.pullMatching(versionTag, k, workerLongActive);
                 long expiresAt = clock.millis() + leaseTtlMs;
                 List<Lease> leasesToIssue = items.stream()
                         .map(item -> new Lease(UUID.randomUUID().toString(), workerId, expiresAt, item))
@@ -159,6 +160,20 @@ public class LeaseManager {
 
     public long currentEpoch() {
         return replicator.currentEpoch();
+    }
+
+    /**
+     * 이 워커가 지금 가진 긴 요청 lease 수 (유형별 인출의 워커당 긴 요청 상한에 쓴다).
+     * lease 목록에서 바로 세므로 복제·승격 후에도 따로 맞출 상태가 없다.
+     */
+    public synchronized int countLongLeases(String workerId) {
+        int count = 0;
+        for (Lease lease : leases.values()) {
+            if (lease.getWorkerId().equals(workerId) && sharedQueue.isLong(lease.getItem())) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public int activeCount() {

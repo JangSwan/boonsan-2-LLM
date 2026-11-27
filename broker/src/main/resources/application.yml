@@ -51,3 +51,11 @@ llm:
     replica-url: ${REPLICA_URL:}
     front-gateway-url: ${FRONT_GATEWAY_URL:http://localhost:8080}
     failure-notify-attempts: 3
+    # 유형별 대기열 인출 (실측 후 보완, 비평 QAS1 제안 채택). 짧은 요청 줄을 먼저 꺼내고,
+    # 긴 요청이 기한(180초)에 가까워지면 먼저 꺼낸다. 짧은 요청이 기다리는 동안만 워커당 긴 요청 수를 제한한다.
+    typed-pull:
+      enabled: ${BROKER_TYPED_PULL:false}
+      long-threshold-tokens: 2000
+      long-deadline-sec: 180
+      long-deadline-margin-sec: 60
+      long-max-per-worker: 10

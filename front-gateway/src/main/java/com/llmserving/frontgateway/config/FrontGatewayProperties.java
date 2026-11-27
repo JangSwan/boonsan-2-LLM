@@ -17,6 +17,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param corsOrigins              브라우저 client 출처
  * @param brokerRetryBudgetMs      broker 호출을 다시 시도하는 최대 시간 (접수는 거절하지 않으므로 이 시간 동안 기다린다)
  * @param brokerRetryBackoffMs     모든 주소가 실패했을 때 다시 시도하기 전 쉬는 시간
+ * @param wideCharTokens           한글·한자·가나 1글자를 몇 토큰으로 셀지 (0 이하면 다른 글자처럼 charsPerToken으로 나눈다).
+ *                                 Llama 토크나이저는 한글을 대략 1글자 1토큰 안팎으로 쪼갠다 (트러블슈팅 R4)
  */
 @ConfigurationProperties("llm.front-gateway")
 public record FrontGatewayProperties(
@@ -30,5 +32,6 @@ public record FrontGatewayProperties(
         String defaultVersion,
         List<String> corsOrigins,
         long brokerRetryBudgetMs,
-        long brokerRetryBackoffMs) {
+        long brokerRetryBackoffMs,
+        double wideCharTokens) {
 }

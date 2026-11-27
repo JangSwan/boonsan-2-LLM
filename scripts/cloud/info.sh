@@ -4,7 +4,7 @@
 source "$(dirname "$0")/lib.sh"
 public=$(imds public-ipv4)
 private=$(imds local-ipv4)
-echo "모드: $(env_get LLM_MODE) / 크기: $(env_get SERVER_SIZE)"
+echo "모드: $(env_get LLM_MODE) / 크기: $(env_get SERVER_SIZE) / 유형별 인출: $(env_get BROKER_TYPED_PULL)"
 if [ -n "$public" ]; then
   echo "이용자 화면:  http://$public:8140"
   echo "답변 월:      http://$public:8140/wall.html"

@@ -53,6 +53,16 @@ jobs:
       - name: sd1 ~ sd6 통합 시나리오
         run: MODE=compose scripts/scenarios/run-all.sh
 
+      # 유형별 대기열 인출(기본 꺼짐)을 켜고 새로 띄워 sd7을 돌린다. epoch·큐 상태를 섞지 않으려고 전부 다시 띄운다.
+      - name: 유형별 대기열 인출 켜고 다시 띄우기
+        run: |
+          docker compose down
+          BROKER_TYPED_PULL=true BROKER_TYPED_PULL_DEADLINE_SEC=60 BROKER_TYPED_PULL_MARGIN_SEC=20 \
+            docker compose up -d --wait --wait-timeout 420
+
+      - name: sd7 유형별 대기열 인출
+        run: MODE=compose SCENARIOS=sd7 scripts/scenarios/run-all.sh
+
       - name: 실패 시 로그
         if: failure()
         run: docker compose logs --no-color --tail=400

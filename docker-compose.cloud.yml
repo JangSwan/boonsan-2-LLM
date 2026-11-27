@@ -30,12 +30,15 @@ services:
       <<: *cloud-env
       # 동시 실행 상한. mock: (worker 2대 - 1) × 8 = 8 (R3: 1대분) / real: .env REAL_CONCURRENCY_CAP
       LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-8}
+      # 유형별 대기열 인출 (.env BROKER_TYPED_PULL, 기본 꺼짐)
+      BROKER_TYPED_PULL: ${BROKER_TYPED_PULL:-false}
   broker-primary:
     <<: *cloud
     mem_limit: ${MEM_LARGE:-448m}
     environment:
       <<: *cloud-env
       LLM_BROKER_CONCURRENCYCAP: ${BROKER_CONCURRENCY_CAP:-8}
+      BROKER_TYPED_PULL: ${BROKER_TYPED_PULL:-false}
   membership-1:
     <<: *cloud
     mem_limit: ${MEM_MEDIUM:-320m}

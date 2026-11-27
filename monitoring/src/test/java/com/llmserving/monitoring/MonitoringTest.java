@@ -28,7 +28,7 @@ class MonitoringTest {
     @Test
     void 큐와_워커_지표를_이름별로_모으고_최신_값을_조회한다() {
         MetricsCollector collector = new MetricsCollector(
-                () -> Optional.of(new QueueMetricsResponse(7, 1, 30, 32, 0)),
+                () -> Optional.of(new QueueMetricsResponse(7, 1, 30, 32, 0, 7, 0)),
                 () -> List.of(new WorkerMetricsResponse("worker-1", "v1", 6, 2, 3.0, 400, 512, 1800, 0.7, 0)),
                 Clock.systemUTC(), properties);
 

@@ -222,6 +222,18 @@ docker run --rm --network host --ulimit nofile=65535:65535 -v "$PWD":/w -w /w ec
 
 - 결과 요약 끝의 **판정(PASS/FAIL)**과 **"섞임 0건"**을 캡처한다. `qas2.csv`, `qas1.csv`, `qas1-answers.jsonl`은 발표 자료용으로 내 PC에 받아 둔다: `scp -i C:\aws\llm-key.pem ubuntu@<공인IP>:boonsan-2-LLM/qas*.csv .`
 
+### 3-5-1. 유형별 대기열 인출 켜고 재기 (QAS1 보완, 트러블슈팅 R8)
+
+```bash
+cd ~/boonsan-2-LLM && git pull && sudo scripts/cloud/setup.sh     # 코드 갱신 (처음 한 번)
+sed -i 's/^BROKER_TYPED_PULL=.*/BROKER_TYPED_PULL=true/' .env || echo 'BROKER_TYPED_PULL=true' >> .env
+scripts/cloud/up.sh && scripts/cloud/info.sh                         # broker 2대만 다시 뜬다. "유형별 인출: true" 확인
+```
+
+- GPU 서버는 건드리지 않는다. broker가 다시 뜨는 동안 워커는 잠깐 인출에 실패했다가 다시 붙는다(`status.sh`로 확인).
+- 그다음 `workers.sh apply`가 출력한 QAS1(폭주)·QAS2(지속) 명령을 그대로 다시 실행해 켜기 전 결과와 비교한다. 운영자 화면에 `length.short`, `length.long`이 보인다.
+- 되돌리기: `.env`에서 `BROKER_TYPED_PULL=false`로 바꾸고 `scripts/cloud/up.sh`.
+
 ### 3-6. N+1 시연 (R3)
 
 - **5대:** `apply`(상한 200)로 둔다. QAS2 부하를 거는 중에 콘솔에서 GPU 서버 1대를 **인스턴스 중지**한다. 운영자 화면에 `worker.failure`(하트비트 끊김, 제외, lease 회수)가 뜨고, 남은 4대가 상한 200을 그대로 채운다(4 × 50).

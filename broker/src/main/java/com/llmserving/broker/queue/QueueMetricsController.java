@@ -23,6 +23,7 @@ public class QueueMetricsController {
     @GetMapping(ApiPaths.Broker.QUEUE_METRICS)
     public QueueMetricsResponse metrics() {
         return new QueueMetricsResponse(sharedQueue.length(), quarantineQueue.list().size(),
-                leaseLimiter.getActiveLeases(), leaseLimiter.getConcurrencyCap(), clock.millis());
+                leaseLimiter.getActiveLeases(), leaseLimiter.getConcurrencyCap(), clock.millis(),
+                sharedQueue.shortLength(), sharedQueue.longLength());
     }
 }
