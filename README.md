@@ -151,7 +151,7 @@ docker compose -f docker-compose.real-gpu.yml logs vllm | grep -E "KV cache|Maxi
 | 가중치 FP8 | 10.07 GiB | 77,824 | 약 53건 |
 | 가중치 FP8 + KV FP8 | 10.07 GiB | 143,360 | 약 99건 |
 
-이 결과로 운영 설정을 FP8 + KV FP8, 워커당 슬롯 50(보고서 가정 GPU당 50건), 요청당 KV 0.2GB(10GB ÷ 50), 상한 100(2대)으로 정했다 (`.env.example` 기본값). 두 FP8 설정 모두 한국어 짧은 답변이 BF16과 비슷하게 나왔다(간이 확인).
+이 결과로 운영 설정을 FP8 + KV FP8, 워커당 슬롯 50(보고서 가정 GPU당 50건), 요청당 KV 0.2GB(10GB ÷ 50), 상한 100(2대)으로 정했다 (`.env.example` 기본값). 크레딧의 미시작 토큰 상한(`WORKER_MAX_UNSTARTED_TOKENS`)은 QAS2 실측으로 64000으로 정했다. mock 기본값 16000에서는 동시 80건에서 p95 4.9초(FAIL), 64000에서는 p95 1.2초(PASS)였다 (docs/troubleshooting.md R7). 두 FP8 설정 모두 한국어 짧은 답변이 BF16과 비슷하게 나왔다(간이 확인).
 
 BF16(U0)·가중치 FP8·FP8 + KV FP8은 `.env`의 `VLLM_EXTRA_ARGS`만 바꿔 잰다 (`""` / `--quantization fp8` / `--quantization fp8 --kv-cache-dtype fp8`).
 

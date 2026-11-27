@@ -59,6 +59,8 @@ services:
       LLM_WORKER_MAXSLOTS: ${WORKER_MAX_SLOTS:-50}
       LLM_WORKER_BUDGET_BMAX: ${WORKER_B_MAX:-2048}
       LLM_WORKER_CREDIT_KVGBPERREQUEST: ${WORKER_KV_GB_PER_REQUEST:-0.2}
+      # 미시작 Prefill 토큰 상한. mock 기본 16000은 실제 L4 Prefill 속도에 비해 작아 실측으로 올렸다 (troubleshooting R7)
+      LLM_WORKER_CREDIT_MAXUNSTARTEDTOKENS: ${WORKER_MAX_UNSTARTED_TOKENS:-64000}
       LLM_WORKER_ENGINE_VLLMMAXTOKENS: ${VLLM_MAX_TOKENS:-256}
     # Membership(인출 중지)과 Monitoring(지표 수집)이 CPU 서버에서 이 주소로 부른다
     ports: ["${SERVER_PORT:-8091}:${SERVER_PORT:-8091}"]
