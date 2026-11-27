@@ -173,7 +173,7 @@ cd boonsan-2-LLM && git pull && scripts/cloud/gpu-join.sh worker-N <상시 서�
 
 `gpu-join.sh`가 하는 일:
 1. AMI에 남은 예전 `vllm` 컨테이너에서 Hugging Face 토큰을 꺼내 `.env`에 넣고(화면에 출력하지 않는다), 예전 컨테이너를 지운다. 토큰을 못 찾으면 입력을 받는다.
-2. `.env`에 워커 ID·포트(worker-N → 809N), 상시 서버 IP, 실측으로 정한 값(FP8 + KV FP8, 슬롯 50, KV 0.2, B 2048)을 쓴다.
+2. `.env`에 워커 ID·포트(worker-N → 809N), 상시 서버 IP, 실측으로 정한 값(FP8 + KV FP8, 슬롯 50, KV 0.2, B 2048, 미시작 토큰 상한 64000)을 쓴다. 전에 `tune.yml`로 미시작 토큰 상한을 따로 올려 두었다면, 이 버전을 받은 뒤 `gpu-join.sh`를 다시 실행하고 `tune.yml`은 지워도 된다.
 3. worker 이미지를 빌드하고(처음 5~10분), vLLM을 띄워 준비될 때까지 진행 상황을 보여 준 뒤 worker를 띄운다.
 4. 상시 서버의 앱 6개에 닿는지, worker가 적재·생성 시험을 통과했는지 ✔/✘로 보여 주고, **상시 서버에서 칠 줄**(`scripts/cloud/workers.sh add worker-N <이 서버 IP>`)을 출력한다.
 

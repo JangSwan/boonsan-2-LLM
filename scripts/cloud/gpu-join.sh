@@ -79,6 +79,7 @@ env_set VLLM_EXTRA_ARGS "--quantization fp8 --kv-cache-dtype fp8"
 env_set WORKER_MAX_SLOTS 50
 env_set WORKER_KV_GB_PER_REQUEST 0.2
 env_set WORKER_B_MAX 2048
+env_set WORKER_MAX_UNSTARTED_TOKENS 64000
 unset token
 ok "$WORKER_ID / 포트 $PORT / 상시 서버 $CONTROL_IP / 이 서버 ${GPU_IP:-?}"
 
