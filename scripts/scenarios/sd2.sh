@@ -4,7 +4,7 @@ source "$(dirname "$0")/lib.sh"
 
 log "sd2: 워커마다 긴 입력(약 4,000토큰) 1건씩, 그 직후 짧은 질문"
 for i in 1 2 3 4 5; do
-  ask_timed "sd2-L$i" "$(long_text 1100)" 120
+  ask_timed "sd2-L$i" "$(long_text 340)" 120
 done
 sleep 0.5
 for i in 1 2 3 4 5; do

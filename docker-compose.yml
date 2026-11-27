@@ -47,6 +47,10 @@ services:
       INSTANCE_ID: broker-replica
       SERVER_PORT: 8082
       BROKER_ROLE: replica
+      # 유형별 대기열 인출 (기본 꺼짐). sd7은 켜고, 기한 여유를 줄여 돌린다
+      BROKER_TYPED_PULL: ${BROKER_TYPED_PULL:-false}
+      LLM_BROKER_TYPEDPULL_LONGDEADLINESEC: ${BROKER_TYPED_PULL_DEADLINE_SEC:-180}
+      LLM_BROKER_TYPEDPULL_LONGDEADLINEMARGINSEC: ${BROKER_TYPED_PULL_MARGIN_SEC:-60}
     ports: ["8082:8082"]
     depends_on:
       redis: { condition: service_healthy }
@@ -59,6 +63,9 @@ services:
       INSTANCE_ID: broker-primary
       SERVER_PORT: 8081
       BROKER_ROLE: primary
+      BROKER_TYPED_PULL: ${BROKER_TYPED_PULL:-false}
+      LLM_BROKER_TYPEDPULL_LONGDEADLINESEC: ${BROKER_TYPED_PULL_DEADLINE_SEC:-180}
+      LLM_BROKER_TYPEDPULL_LONGDEADLINEMARGINSEC: ${BROKER_TYPED_PULL_MARGIN_SEC:-60}
       REPLICA_URL: http://broker-replica:8082
     ports: ["8081:8081"]
     depends_on:

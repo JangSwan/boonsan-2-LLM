@@ -65,6 +65,7 @@ ask_timed() {
   printf '%s' "$text" >"$OUT/$name.txt"
   (
     start=$(now_ms)
+    echo "$start" >"$OUT/$name.start"
     jq -n --rawfile t "$OUT/$name.txt" '{text: $t}' | curl -sN -X POST "$FG/api/front-gateway/questions" \
       -H 'Content-Type: application/json' -H 'Accept: text/event-stream' --data-binary @- --max-time "$max" 2>/dev/null \
       | while IFS= read -r line; do
@@ -91,4 +92,4 @@ assert_no_duplicate_seq() {
   [ -z "$dup" ] || fail "$1에서 순번 $dup 중복"
 }
 
-long_text() { python3 -c "print('긴 문서 요약을 부탁합니다. ' * $1)"; }
+long_text() { python3 -c "print('긴 문서 요약을 부탁합니다. ' * $1)"; }  # 1회 ≈ 12.5토큰 (한글 11글자 1토큰씩 + 공백·마침표 5글자 ÷ 4)
