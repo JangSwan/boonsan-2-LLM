@@ -970,6 +970,27 @@ EA 시퀀스의 메시지는 한국어 설명으로 되어 있다. 아래 표의
 - Redis의 `broker-primary` 락 접근은 기술 보조 클래스(`config`/`adapter`)로 만들고, Replicator와 BrokerReplica만 사용한다.
 - epoch: EA `ChangeRecord.epoch`(3차 수정에서 추가)와 lease 응답 DTO의 `epoch: long`으로 전달한다.
 
+**실측 후 보완: 유형별 대기열 인출 (비평 QAS1 제안 채택)**
+- 배경: real GPU 2대(상한 100)에 500건 폭주(긴 입력 20%)를 넣자, 도착 순서 인출에서 짧은 질문 35건(접수 순번 356 이후)이 30초 첫 토큰 기한을 넘겼다(에러 7.0%). 긴 입력은 순번 안내 1초(p95 0.78초)와 첫 토큰 3분(최대 34.9초)을 모두 지켰다. 기한이 다른 요청을 도착 순서로만 꺼내는 것이 원인이다. 비평 QAS1이 이 실패를 예측하고 "C2 유지 + 유형별 대기열 인출"을 권했다(`docs/troubleshooting.md` R8).
+- 스위치: `llm.broker.typed-pull.enabled`(기본 false, `BROKER_TYPED_PULL`). 꺼져 있으면 지금까지와 같다.
+- C2 공용 인출은 그대로다. 줄을 GPU에 묶지 않고(T2와 다름) 모든 워커가 두 줄에서 꺼낸다. 저장은 목록 하나이고, 줄은 입력 토큰(`long-threshold-tokens` 2000 이상이면 긴 요청)으로 정해진다. 그래서 복제·승격(sd5)에서 따로 맞출 상태가 없다.
+- 꺼내는 순서 (`SharedQueue.pullMatching(versionTag, k, workerLongActive)`, 확인과 제거를 한 번에)
+  1. 기한에 가까운 긴 요청: 대기 ≥ `long-deadline-sec`(180) − `long-deadline-margin-sec`(60)
+  2. 짧은 요청
+  3. 나머지 긴 요청. 단 짧은 요청이 남아 있으면 이 워커가 가진 긴 요청 lease와 합쳐 `long-max-per-worker`(10)까지만
+  - 줄 안에서는 접수 순서. 재시도 작업은 자기 줄 맨 앞, 한 번의 인출에 1건(sd4 규칙 그대로)
+- 워커의 긴 요청 수: `LeaseManager.countLongLeases(workerId)`가 lease 목록에서 바로 센다(복제되는 lease에서 세므로 승격 후에도 그대로).
+- 순번: 자기 줄 안의 순번이다(`SharedQueue.positionOf`). 긴 요청끼리는 순서가 바뀌지 않으므로 1초 안에 안내한 순번이 지켜진다.
+- 입력 토큰 추정: Front Gateway는 한글·한자·가나를 1글자당 `wide-char-tokens`(1.0) 토큰으로, 나머지를 `chars-per-token`(4)글자당 1토큰으로 센다(`QuestionController.estimateTokens`). 예전 방식(글자 수 ÷ 4)으로는 한글 긴 입력이 짧은 요청으로 분류된다(R4).
+- 지표: `QueueMetricsResponse`에 `shortLength`, `longLength`를 더했다(common DTO, 덧붙임만). 운영자 화면에 `length.short`, `length.long`으로 보인다.
+- **EA 반영 필요**
+  - `SharedQueue`: 오퍼레이션 `pullMatching(versionTag, k, workerLongActive)`(기존 `pullMatching(versionTag, k)`는 유지), `isLong(item)`, `shortLength()`, `longLength()`. `positionOf`의 의미가 "자기 줄 안의 순번"으로 바뀜(스위치가 켜졌을 때)
+  - `LeaseManager`: 오퍼레이션 `countLongLeases(workerId)`
+  - broker-config: `typed-pull.enabled`, `long-threshold-tokens`, `long-deadline-sec`, `long-deadline-margin-sec`, `long-max-per-worker`
+  - front-gateway 설정: `wide-char-tokens`
+  - sd1 노트: "스위치가 켜지면 짧은 요청 줄을 먼저 꺼낸다(기한 임박 긴 요청은 예외)"
+  - `LeaseLimiter`는 바뀌지 않는다(전체 상한만 맡는다).
+
 **인출 재개**
 - EA에는 `CreditManager.stopPull()`만 있고 다시 시작하는 오퍼레이션이 없다. sd6처럼 `setVersion(versionTag)`이 호출되면 인출을 다시 시작한다.
 
