@@ -72,7 +72,7 @@ class QuestionFlowTest {
 
     @Test
     void 질문을_받아_요청ID와_버전을_붙여_적재하고_순번을_안내한_뒤_토큰을_중복없이_중계하고_닫는다() throws Exception {
-        MvcResult result = ask("가".repeat(400));
+        MvcResult result = ask("a".repeat(400));
 
         Request request = enqueued.get();
         assertThat(request.versionTag()).isEqualTo("v1");

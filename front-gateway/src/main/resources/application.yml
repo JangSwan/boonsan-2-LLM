@@ -36,6 +36,8 @@ llm:
     ratio-poll-interval-ms: 1000
     sse-timeout-ms: 600000
     chars-per-token: 4
+    # 한글·한자·가나는 1글자를 이만큼의 토큰으로 센다 (글자 수 ÷ 4로 세면 한글 입력이 3~4배 적게 잡힌다, R4)
+    wide-char-tokens: 1.0
     default-version: v1
     cors-origins: ${CORS_ORIGINS:http://localhost:8140}
     broker-retry-budget-ms: 20000
