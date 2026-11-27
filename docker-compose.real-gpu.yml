@@ -42,7 +42,9 @@ services:
   worker:
     build: { context: ., dockerfile: docker/Dockerfile, args: { MODULE: worker } }
     image: llm-serving/worker
-    restart: "no"
+    # 서버를 껐다 켜면 vLLM과 함께 다시 뜬다. vLLM이 아직 준비 중이어도 worker는 생성 시험(generationTest)을
+    # 통과할 때까지 설정 감지 주기마다 다시 시도하고, 통과하기 전에는 작업을 받지 않는다(WorkerAgent.joinWith).
+    restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: real
       INSTANCE_ID: "${INSTANCE_ID:?INSTANCE_ID를 .env에 넣으세요}"

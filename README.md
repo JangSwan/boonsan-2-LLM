@@ -39,7 +39,7 @@ docker compose up --build  # 전체 실행 (mock 프로필)
 
 ### 클라우드 상시 서버
 
-나와 팀원이 브라우저로 언제든 접속할 수 있게 CPU 서버 1대(평소 중지, 쓸 때만 시작)에 앱을 올리는 방법은 [docs/cloud-setup.md](docs/cloud-setup.md)에 있다. `docker-compose.cloud.yml`, `scripts/cloud/`를 쓴다. GPU가 없을 때는 mock worker 2대로 돌고, GPU 서버를 켜면 `scripts/cloud/mode.sh real`로 real worker를 붙인다.
+나와 팀원이 브라우저로 언제든 접속할 수 있게 CPU 서버 1대(평소 중지, 쓸 때만 시작)에 앱을 올리는 방법은 [docs/cloud-setup.md](docs/cloud-setup.md)에 있다. `docker-compose.cloud.yml`, `scripts/cloud/`를 쓴다. GPU가 없을 때는 mock worker 2대로 돌고, GPU 서버는 GPU 서버마다 `scripts/cloud/gpu-join.sh worker-N <상시 서버 프라이빗 IP>`, 상시 서버에서 `scripts/cloud/workers.sh add …` 후 `apply`로 붙인다([3절](docs/cloud-setup.md#3-gpu-붙이기-1대--2대--5대)).
 
 ## 시나리오 (sd1 ~ sd6)
 
@@ -112,7 +112,7 @@ scripts/real/build-jars.sh             # CPU 서버: 전체
 
 ### 3. 띄우기
 
-CPU 서버를 먼저 띄운다. 상시 서버([docs/cloud-setup.md](docs/cloud-setup.md))를 쓰면 아래 CPU 서버 명령 대신 `scripts/cloud/mode.sh real`을 쓴다.
+CPU 서버를 먼저 띄운다. 상시 서버([docs/cloud-setup.md](docs/cloud-setup.md))를 쓰면 이 절 대신 그 문서의 3절(`gpu-join.sh`, `workers.sh`)을 따른다. GPU 서버의 worker는 서버를 껐다 켜면 자동으로 다시 뜬다.
 
 ```bash
 # CPU 서버

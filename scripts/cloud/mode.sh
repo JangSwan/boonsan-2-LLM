@@ -40,5 +40,5 @@ esac
 compose up -d
 echo "모드: $(env_get LLM_MODE), 워커: $(env_get WORKER_URLS), 상한: $(env_get BROKER_CONCURRENCY_CAP), 단계: $(env_get MODEL_ACTIVE_STAGE)"
 if [ "$MODE" = real ]; then
-  echo "GPU 서버마다: docker compose -f docker-compose.real-gpu.yml --env-file .env up -d   (CONTROL_IP = 이 서버의 프라이빗 IP)"
+  echo "GPU 서버 합류는 GPU 서버에서 scripts/cloud/gpu-join.sh <worker-N> <이 서버 프라이빗 IP> (CPU 서버 쪽은 scripts/cloud/workers.sh)"
 fi
